@@ -71,7 +71,9 @@ input,select,textarea{font-size:16px}
 .cats .c .e{font-size:18px;text-align:center}
 .cats .bar{height:6px;background:#efede7;border-radius:4px;margin-top:5px;overflow:hidden}
 .cats .bar i{display:block;height:100%;background:var(--acc);border-radius:4px}
-.cats .c .nm{font-weight:600;font-size:14px;display:flex;justify-content:space-between}
+.cats .c .nm{font-weight:600;font-size:14px;display:flex;justify-content:space-between;gap:4px 8px;flex-wrap:wrap;align-items:baseline}
+.cats .c .nm small{font-size:11.5px}
+.cats .c{min-width:0}.cats .c>div{min-width:0}
 .cats .c .nm small{color:var(--mute);font-weight:500}
 .cats .c .vv{font-weight:700;font-variant-numeric:tabular-nums;font-size:14px}
 .day{font-size:12px;font-weight:700;color:var(--mute);text-transform:uppercase;letter-spacing:.06em;margin:14px 4px 6px}
@@ -284,6 +286,14 @@ function mediasCat(mref,pm){const ms=[];for(let k=1;k<=12;k++){const m=addMes(mr
   const md={};for(const m of ms)for(const c in pm[m].cats)md[c]=(md[c]||0)+pm[m].cats[c];for(const c in md)md[c]/=ms.length;return {md,n:ms.length}}
 function metasDoMes(mref,pm){const {md}=mediasCat(mref,pm);const ov=(S.cfg&&S.cfg.metas)||{};const out={};
   for(const c of new Set([...Object.keys(md),...Object.keys(ov)])){const o=ov[resolveCat(c)]??ov[c];out[resolveCat(c)]=(o!=null&&o!=='')?+o:(md[c]||0)}return out}
+function saldoMesCasa(m,gasto){
+  if(typeof FIN_WS==='undefined')return null;const atual=S.fin;let rec=0,tem=false;
+  for(const w of FIN_WS){const W=S.fins[w];if(!W||(!W.cfg&&!Object.keys(W.meses).length))continue;S.fin=W;for(const f of fcfg().fontes){const v=fRec(m,f);if(v){rec+=v;tem=true}}}
+  S.fin=atual;if(!tem||rec<=0)return null;
+  const saldo=rec-gasto,marg=saldo/rec;
+  const [emo,cor,dica]=saldo<0?['😟','var(--bad)','Gastos da casa acima das receitas do mês']:marg<=.05?['🛑','var(--bad)','Pare: folga de até 5% da receita']:marg<=.15?['⚠️','var(--warn)','Atenção: folga de até 15% da receita']:['✅','#1f6b45','Folga confortável (mais de 15% da receita)'];
+  return {rec,saldo,marg,emo,cor,dica};
+}
 function fixasStatus(list,m){
   const fx=(S.cfg&&S.cfg.fixas)||FIXAS_PADRAO;
   const hoje=new Date();const isCur=m===ym(hoje);const isPast=m<ym(hoje);
@@ -470,7 +480,9 @@ function viewMes(){
   }
   // herói
   const deve=r.saldoDai>0.005?'Alex':r.saldoDai<-0.005?'Dai':null;
-  h+=`<div class="card hero"><div class="lbl">Gastos da casa no mês</div><div class="big">${brl(r.tot)}</div>
+  const sm=saldoMesCasa(S.mes,r.tot);
+  h+=`<div class="card hero"><div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px"><div style="min-width:0"><div class="lbl">Gastos da casa no mês</div><div class="big">${brl(r.tot)}</div></div>
+  ${sm?`<button data-act="gofin" title="${esc(sm.dica)}" style="all:unset;cursor:pointer;text-align:right;flex:0 0 auto;padding-top:2px"><div style="font-size:22px;line-height:1">${sm.emo}</div><div style="font-size:11px;color:var(--ink2);font-weight:600;margin-top:4px">receitas ${brl0(sm.rec)}</div><div style="font-size:13px;font-weight:800;color:${sm.cor};white-space:nowrap">saldo ${sm.saldo<0?'−':''}${brl0(Math.abs(sm.saldo))}</div><div style="font-size:10.5px;color:var(--mute);font-weight:600">${sm.saldo<0?'acima da receita':pct(sm.marg)+' de folga'}</div></button>`:''}</div>
   <div class="split">
    ${['Dai','Alex'].map(p=>`<div class="who"><div class="n"><i style="background:${cor(p)}"></i>${p}</div>
      <div class="row"><span>Cota</span><span>${brl(p==='Dai'?r.cDai:r.cAlex)}</span></div>
@@ -1194,6 +1206,7 @@ document.addEventListener('click',async ev=>{
     case 'catsave':salvarCats();break;
     case 'bsel':S.bsel={k:b.dataset.k,v:b.dataset.v,label:b.dataset.label||b.dataset.v};S.tab='busca';render();window.scrollTo(0,0);break;
     case 'bvoltar':S.tab='mes';render();break;
+    case 'gofin':S.tab='fin';S.fw='all';S.fmes=S.mes;render();window.scrollTo(0,0);toast(b.title||'');break;
     case 'retro':F.retroOn=!F.retroOn;drawForm(false);break;
     case 'fw':S.fw=b.dataset.w;S.fall=false;render();window.scrollTo(0,0);break;
     case 'fprev':S.fmes=addMes(S.fmes,-1);render();break;
