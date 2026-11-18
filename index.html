@@ -170,8 +170,15 @@ const FIREBASE_CONFIG = {
 const APP_URL = location.origin + location.pathname;
 const MESES=['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];
 const CATS=[['Super','🛒'],['Restaurante','🍽️'],['Comida','🥡'],['Transporte','⛽'],['Moradia','🏠'],['Internet','📶'],['CEEE','💡'],['Diversão','🎉'],['Férias','🏖️'],['Equipamentos','🛠️'],['Pets','🐶'],['Saúde','🩺'],['Remédios','💊'],['Festa','🎈'],['Presentes','🎁'],['Família','👨‍👩‍👧'],['Projeto','📐'],['Marcenaria','🪚'],['Mudança','📦'],['Outros','•'],['Acerto','🔁']];
-const EMO=Object.fromEntries(CATS);
-const COTA_CAT={Super:.6,Restaurante:.6,Comida:.6,CEEE:.6,Moradia:.6};
+const COTA_PADRAO={Super:.6,Restaurante:.6,Comida:.6,CEEE:.6,Moradia:.6};
+const CATS_PADRAO=CATS.filter(c=>c[0]!=='Acerto').map(([n,e])=>({nome:n,e,cd:COTA_PADRAO[n]??.5}));
+function cats(){const c=S.cfg&&Array.isArray(S.cfg.cats)&&S.cfg.cats.length?S.cfg.cats:CATS_PADRAO;return c}
+function emo(t){if(t==='Acerto')return '🔁';const c=cats().find(x=>x.nome===t);return c?c.e:'•'}
+function cotaCat(t){const c=cats().find(x=>x.nome===t);return c?+c.cd:.5}
+function kk(l){return norm(l).replace(/ /g,'_')||'_'}
+function lugCfg(){return (S.cfg&&S.cfg.lugares)||{}}
+function aliasL(l){const L=lugCfg();let n=l,k=0,r=L[kk(n)];while(r&&r.alias&&k++<6){if(r.alias===n)break;n=r.alias;r=L[kk(n)]}return n}
+function resolveCat(t){const r=(S.cfg&&S.cfg.renomes)||{};let k=0;while(r[t]&&k++<20)t=r[t];return t}
 const FIXAS_PADRAO=[
   {nome:'Aluguel + Condomínio',t:'Moradia',dia:9,v:4613.04,cd:.6,chaves:'aluguel,condom'},
   {nome:'Internet (Claro)',t:'Internet',dia:23,v:99.9,cd:.5,chaves:'internet,claro'},
@@ -202,15 +209,17 @@ function cor(p){return p==='Dai'?'var(--dai)':'var(--alex)'}
 function outro(p){return p==='Dai'?'Alex':'Dai'}
 
 /* ===================== dados ===================== */
-function entries(){
+let _entCache=null;
+function entries(){if(_entCache)return _entCache;return _entCache=entries0()}
+function entries0(){
   const ov={},out=[];
   for(const t of S.tx) if(t.ref) ov[t.ref]=t;
   for(const [mes,doc] of Object.entries(S.hist)){
     (doc.items||[]).forEach((a,i)=>{if(!Array.isArray(a))a=[a.d,a.v,a.p,a.l,a.t,a.cd];const id='h:'+mes+':'+i;const o=ov[id];
-      if(o){if(!o.del)out.push({...o,id:o._id,mes:o.mes||mes,src:'planilha'})}
-      else out.push({id,d:a[0],v:a[1],p:a[2],l:a[3],t:a[4],cd:a[5],mes,src:'planilha'})});
+      if(o){if(!o.del)out.push({...o,l:aliasL(o.l),t:resolveCat(o.t),id:o._id,mes:o.mes||mes,src:'planilha'})}
+      else out.push({id,d:a[0],v:a[1],p:a[2],l:aliasL(a[3]),t:resolveCat(a[4]),cd:a[5],mes,src:'planilha'})});
   }
-  for(const t of S.tx) if(!t.ref) out.push({...t,id:t._id});
+  for(const t of S.tx) if(!t.ref) out.push({...t,l:aliasL(t.l),t:resolveCat(t.t),id:t._id});
   return out;
 }
 function doMes(all,m){return all.filter(e=>e.mes===m).sort((a,b)=>b.d.localeCompare(a.d)||(b.at||0)-(a.at||0))}
@@ -236,14 +245,15 @@ function buildIndex(all){
   for(const r of Object.values(m)){
     r.nome=Object.entries(r.sp).sort((a,b)=>b[1]-a[1]||(/[A-Z]{2}/.test(a[0])?1:-1))[0][0];
     const rec=r.hist.slice(-8);r.t=mode(rec.map(e=>e.t));r.cd=+mode(rec.filter(e=>e.t===r.t).map(e=>String(e.cd)));
-    r.score=r.rec*3+r.n*.3;r.toks=r.k.split(' ');delete r.hist}
+    const o=lugCfg()[kk(r.k)];if(o){if(o.t)r.t=resolveCat(o.t);if(o.cd!=null&&o.cd!=='')r.cd=+o.cd;r.oculto=!!o.oculto;r.fix=true}
+    r.tot=r.vals.reduce((a,b)=>a+b,0);r.score=r.rec*3+r.n*.3;r.toks=r.k.split(' ');delete r.hist}
   return Object.values(m);
 }
 function sugerir(q,n=6){
-  if(!IDX)return[];const nq=norm(q);
-  if(!nq)return [...IDX].sort((a,b)=>b.score-a.score).slice(0,n);
+  if(!IDX)return[];const nq=norm(q);const BASE=IDX.filter(r=>!r.oculto);
+  if(!nq)return [...BASE].sort((a,b)=>b.score-a.score).slice(0,n);
   const qt=nq.split(' ').filter(Boolean);
-  return IDX.map(r=>{let s=0;
+  return BASE.map(r=>{let s=0;
     if(r.k===nq)s+=200; else if(r.k.startsWith(nq))s+=120;
     for(const w of qt){ if(r.toks.some(t=>t.startsWith(w)))s+=50; else if(w.length>=3&&r.k.includes(w))s+=25; else s-=40; }
     return {r,s:s+Math.min(r.score,40)}}).filter(x=>x.s>40).sort((a,b)=>b.s-a.s).slice(0,n).map(x=>x.r);
@@ -262,6 +272,12 @@ function casarComerciante(raw){
 }
 const REGRAS=[[/posto|combust|ipiranga|shell|petrobras|br mania|gasolin/,'Gasolina'],[/ifood/,'Ifood'],[/uber|99 ?app|99pop/,'Uber'],[/panvel|drogaria|farmac|sao joao|raia|droga/,'Panvel'],[/petlove|petz|cobasi|pet shop|veterin/,'Petlove'],[/zaffari/,'Zaffari'],[/carrefour/,'Carrefour'],[/bourbon/,'Bourbon']];
 function regraComerciante(raw){const n=norm(raw);for(const[re,nome]of REGRAS){if(re.test(n)){const r=IDX&&IDX.find(x=>x.k===norm(nome));if(r)return r}}return null}
+let _pmCache=null;
+function porMes(all){if(_pmCache&&_pmCache.src===all)return _pmCache.v;const v={};for(const e of all){const m=e.mes;(v[m]=v[m]||{tot:0,cats:{}});if(e.t==='Acerto')continue;v[m].tot+=+e.v;v[m].cats[e.t]=(v[m].cats[e.t]||0)+(+e.v)}_pmCache={src:all,v};return v}
+function mediasCat(mref,pm){const ms=[];for(let k=1;k<=12;k++){const m=addMes(mref,-k);if(pm[m]&&pm[m].tot>0)ms.push(m)}
+  const md={};for(const m of ms)for(const c in pm[m].cats)md[c]=(md[c]||0)+pm[m].cats[c];for(const c in md)md[c]/=ms.length;return {md,n:ms.length}}
+function metasDoMes(mref,pm){const {md}=mediasCat(mref,pm);const ov=(S.cfg&&S.cfg.metas)||{};const out={};
+  for(const c of new Set([...Object.keys(md),...Object.keys(ov)])){const o=ov[resolveCat(c)]??ov[c];out[resolveCat(c)]=(o!=null&&o!=='')?+o:(md[c]||0)}return out}
 function fixasStatus(list,m){
   const fx=(S.cfg&&S.cfg.fixas)||FIXAS_PADRAO;
   const hoje=new Date();const isCur=m===ym(hoje);const isPast=m<ym(hoje);
@@ -304,7 +320,7 @@ function dbErr(e){const c=e&&e.code;
 }
 
 /* ===================== inicialização ===================== */
-function dataChanged(){IDX=buildIndex(entries());render();maybeHash()}
+function dataChanged(){_entCache=null;IDX=buildIndex(entries());render();maybeHash()}
 function wrapFirestore(fs,fdb){
   const qs=x=>({docs:x.docs.map(d=>({id:d.id,exists:true,data:()=>d.data()})),size:x.size,empty:x.empty,metadata:x.metadata});
   const ds=x=>({id:x.id,exists:x.exists(),data:()=>x.data(),metadata:x.metadata});
@@ -323,7 +339,7 @@ async function startData(){
   unsubs.push(db.collection('hist').onSnapshot(x=>{const h={};x.docs.forEach(d=>h[d.id]=d.data());S.hist=h;done('hist');dataChanged()},e=>{done('hist');dbErr(e)}));
   unsubs.push(db.collection('tx').onSnapshot(x=>{S.tx=x.docs.map(d=>({...d.data(),_id:d.id}));done('tx');dataChanged()},e=>{done('tx');dbErr(e)}));
   unsubs.push(db.collection('pend').onSnapshot(x=>{S.pend=x.docs.map(d=>({...d.data(),_id:d.id}));render();maybeHash()},()=>{}));
-  unsubs.push(db.doc('cfg/main').onSnapshot(x=>{S.cfg=x.exists?x.data():null;render()},()=>{}));
+  unsubs.push(db.doc('cfg/main').onSnapshot(x=>{S.cfg=x.exists?x.data():null;dataChanged()},()=>{}));
   if(!S.me)askMe();
 }
 async function init(){
@@ -394,7 +410,7 @@ function render(){
   const meBtn=document.getElementById('meBtn');
   meBtn.innerHTML=S.me?`<i style="background:${cor(S.me)}"></i>${esc(S.me)}`:'<i style="background:#ccc"></i>Quem é você?';
   document.querySelectorAll('.tabs button').forEach(b=>b.classList.toggle('on',b.dataset.tab===S.tab));
-  document.getElementById('fab').style.display=S.tab==='ajustes'?'none':'';
+  document.getElementById('fab').style.display=(S.tab==='ajustes'||S.tab==='lugares')?'none':'';
   const v=document.getElementById('view');
   const nav=document.querySelector('.tabs');const fab=document.getElementById('fab');
   if(S.fatal){v.innerHTML=`<div class="card"><b>Ops.</b><p class="hint">${esc(S.fatal)}</p></div>`;return}
@@ -409,6 +425,7 @@ function render(){
   if(!S.loaded.tx&&!S.local){v.innerHTML=`<div class="status">${S.slow?'Os dados ainda não carregaram — verifique a conexão.':'Carregando…'}</div>`;return}
   if(S.tab==='mes')v.innerHTML=viewMes();
   else if(S.tab==='analise')v.innerHTML=viewAnalise();
+  else if(S.tab==='lugares'){v.innerHTML=viewLugares();const q=document.getElementById('lq');if(q){q.oninput=()=>{S.lq=q.value;const pos=q.selectionStart;render();const n=document.getElementById('lq');n.focus();try{n.setSelectionRange(pos,pos)}catch(e){}}}}
   else v.innerHTML=viewAjustes();
 }
 function viewMes(){
@@ -438,12 +455,22 @@ function viewMes(){
   // fixas
   const fx=fixasStatus(list,S.mes);
   h+=`<div class="sec"><h2>Contas fixas</h2><span>toque para lançar</span></div><div class="fixas">`+
-    fx.map((f,i)=>`<button class="fx ${f.st}" data-act="fixa" data-i="${i}"><div class="n">${EMO[f.t]||'•'} ${esc(f.nome)}</div><div class="v">${f.st==='ok'?brl(f.pago):'~'+brl(f.v)+' · dia '+f.dia}</div><span class="st">${f.st==='ok'?'Lançada':f.st==='late'?'Atrasada?':'Pendente'}</span></button>`).join('')+`</div>`;
+    fx.map((f,i)=>`<button class="fx ${f.st}" data-act="fixa" data-i="${i}"><div class="n">${emo(f.t)} ${esc(f.nome)}</div><div class="v">${f.st==='ok'?brl(f.pago):'~'+brl(f.v)+' · dia '+f.dia}</div><span class="st">${f.st==='ok'?'Lançada':f.st==='late'?'Atrasada?':'Pendente'}</span></button>`).join('')+`</div>`;
   // categorias
-  const cats=Object.entries(r.cats).sort((a,b)=>b[1]-a[1]);
-  if(cats.length){const mx=cats[0][1];
-    h+=`<div class="sec"><h2>Por categoria</h2><span>${cats.length} categorias</span></div><div class="card cats">`+
-    cats.map(([c,v])=>`<div class="c"><div class="e">${EMO[c]||'•'}</div><div><div class="nm">${esc(c)}<small>${pct(v/r.tot)}</small></div><div class="bar"><i style="width:${(v/mx*100).toFixed(1)}%"></i></div></div><div class="vv">${brl0(v)}</div></div>`).join('')+`</div>`}
+  const pm=porMes(all);const metas=metasDoMes(S.mes,pm);
+  const nomesC=[...new Set([...Object.keys(r.cats),...Object.keys(metas).filter(c=>metas[c]>=1)])];
+  const rows=nomesC.map(c=>({c,v:r.cats[c]||0,m:metas[c]||0})).sort((a,b)=>(b.v-b.m>0?1e9+b.v-b.m:0)-(a.v-a.m>0?1e9+a.v-a.m:0)||b.v-a.v||b.m-a.m);
+  if(rows.length){
+    const acima=rows.filter(x=>x.m>0&&x.v>x.m);const totMeta=rows.reduce((a,x)=>a+x.m,0);
+    const hoje=new Date();const isCur=S.mes===ym(hoje);const fracMes=isCur?hoje.getDate()/new Date(hoje.getFullYear(),hoje.getMonth()+1,0).getDate():1;
+    h+=`<div class="sec"><h2>Metas por categoria</h2><span>${acima.length?`<b style="color:var(--bad)">${acima.length} acima da meta</b>`:'tudo dentro ✓'}</span></div><div class="card cats">
+    <div class="hint" style="margin-bottom:6px">Gasto ${brl0(r.tot)} de ${brl0(totMeta)} em metas (${totMeta?pct(r.tot/totMeta):'—'})${isCur?` · ${pct(fracMes)} do mês já passou`:''}. Traço = meta.</div>`+
+    rows.map(({c,v,m})=>{const mx=Math.max(v,m,1);const over=m>0&&v>m;const perto=!over&&m>0&&v>m*.85;
+      const cor=over?'var(--bad)':perto?'var(--warn)':'var(--acc)';
+      const info=m>0?(over?`<b style="color:var(--bad)">+${brl0(v-m)} acima</b>`:`${pct(v/m)} da meta · faltam ${brl0(m-v)}`):'sem meta';
+      return `<div class="c" data-act="metaedit" data-c="${esc(c)}" style="cursor:pointer"><div class="e">${emo(c)}</div><div><div class="nm">${esc(c)}<small>${info}</small></div>
+      <div class="bar" style="position:relative;overflow:visible"><i style="width:${(v/mx*100).toFixed(1)}%;background:${cor}"></i>${m>0?`<b style="position:absolute;top:-3px;left:calc(${(m/mx*100).toFixed(1)}% - 1px);width:2px;height:12px;background:#1d1f1c;border-radius:1px"></b>`:''}</div></div>
+      <div class="vv">${brl0(v)}<small style="display:block;font-size:11px;color:var(--mute);font-weight:600;text-align:right">${m>0?'meta '+brl0(m):''}</small></div></div>`}).join('')+`</div>`}
   // lançamentos
   h+=`<div class="sec"><h2>Lançamentos</h2><span>${list.length} itens</span></div>`;
   if(!list.length)h+=`<div class="list"><div class="empty">Nada lançado em ${mesLabel(S.mes)} ainda.<br>Toque no + para começar.</div></div>`;
@@ -451,7 +478,7 @@ function viewMes(){
   for(const e of list){
     if(e.d!==lastD){if(open)h+='</div>';h+=`<div class="day">${dLabel(e.d)}</div><div class="list">`;open=true;lastD=e.d}
     const cd=+e.cd;
-    h+=`<button class="it" data-act="edit" data-id="${esc(e.id)}"><div class="ic">${EMO[e.t]||'•'}</div>
+    h+=`<button class="it" data-act="edit" data-id="${esc(e.id)}"><div class="ic">${emo(e.t)}</div>
       <div class="x"><b>${esc(e.l)}${e.src==='nfc'?'<span class="tag">aprox.</span>':''}</b><small><span class="dot" style="background:${cor(e.p)}"></span>${esc(e.p)} pagou · ${esc(e.t)}</small></div>
       <div class="v">${brl(e.v)}<small style="color:var(--ink2)">${e.t==='Acerto'?'acerto':'Dai '+pct(cd)+' · Alex '+pct(1-cd)}</small></div></button>`;
   }
@@ -459,8 +486,106 @@ function viewMes(){
   h+=`<div style="display:flex;gap:8px;margin-top:14px"><button class="btn light sm" data-act="copy" style="flex:1">📋 Copiar mês p/ planilha</button></div>`;
   return h;
 }
+function segAn(){const m=S.amode||'mes';return `<div class="seg" style="margin-bottom:12px;grid-template-columns:1fr 1fr 1fr">${[['mes','Mês'],['ano','Ano'],['per','Período']].map(([k,t])=>`<button class="${m===k?'on':''}" data-act="amode" data-m="${k}">${t}</button>`).join('')}</div>`}
+function mesesEntre(de,ate){const out=[];if(!de||!ate)return out;if(de>ate)[de,ate]=[ate,de];let m=de,k=0;while(m<=ate&&k++<120){out.push(m);m=addMes(m,1)}return out}
+function periodoAtual(){
+  const P=S.per||(S.per={tipo:'s',ano:ym(new Date()).slice(0,4),sem:new Date().getMonth()<6?1:2});const hoje=ym(new Date());
+  if(P.tipo==='s'){const a=P.ano;return {ms:P.sem===1?mesesEntre(a+'-01',a+'-06'):mesesEntre(a+'-07',a+'-12'),titulo:`${P.sem}º semestre de ${a}`}}
+  if(P.tipo==='u'){const ms=mesesEntre(addMes(hoje,-(P.n-1)),hoje);return {ms,titulo:`Últimos ${P.n} meses`}}
+  const de=P.de||addMes(hoje,-5),ate=P.ate||hoje;return {ms:mesesEntre(de,ate),titulo:`${mesLabel(de<=ate?de:ate)} a ${mesLabel(de<=ate?ate:de)}`};
+}
+function viewPeriodo(){
+  const all=entries();const pm=porMes(all);const P=S.per||periodoAtual()&&S.per;const {ms,titulo}=periodoAtual();
+  const ant=ms.map(m=>addMes(m,-12));
+  const catSel=S.acat||null;
+  let h=segAn();
+  h+=`<div class="chips" style="margin-bottom:8px">${[['s1','1º semestre'],['s2','2º semestre'],['u3','3 meses'],['u6','6 meses'],['u12','12 meses'],['c','Personalizado']].map(([k,t])=>{const on=(k==='s1'&&P.tipo==='s'&&P.sem===1)||(k==='s2'&&P.tipo==='s'&&P.sem===2)||(k[0]==='u'&&P.tipo==='u'&&P.n===+k.slice(1))||(k==='c'&&P.tipo==='c');return `<button class="chip ${on?'on':''}" data-act="per" data-k="${k}">${t}</button>`}).join('')}</div>`;
+  if(P.tipo==='s')h+=`<div class="mnav"><button data-act="pprev">‹</button><b style="font-size:20px">${titulo}</b><button data-act="pnext">›</button></div>`;
+  else if(P.tipo==='c')h+=`<div class="card" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:12px"><label class="hint" style="margin:0;min-width:0">De<input class="inp" type="month" id="pde" style="min-width:0;max-width:100%" value="${P.de||ms[0]}"></label><label class="hint" style="margin:0;min-width:0">Até<input class="inp" type="month" id="pate" style="min-width:0;max-width:100%" value="${P.ate||ms[ms.length-1]}"></label></div>`;
+  else h+=`<div class="mnav"><span style="width:40px"></span><b style="font-size:20px">${titulo}</b><span style="width:40px"></span></div>`;
+  const tot=ms.reduce((a,m)=>a+((pm[m]&&pm[m].tot)||0),0);const comDados=ms.filter(m=>pm[m]&&pm[m].tot>0);
+  const pares=ms.map((m,i)=>i).filter(i=>pm[ms[i]]&&pm[ms[i]].tot>0&&pm[ant[i]]&&pm[ant[i]].tot>0);
+  const totAnt=pares.reduce((a,i)=>a+pm[ant[i]].tot,0);const totPar=pares.reduce((a,i)=>a+pm[ms[i]].tot,0);
+  const maior=ms.reduce((b,m)=>{const v=(pm[m]&&pm[m].tot)||0;return v>b.v?{v,m}:b},{v:0,m:null});
+  h+=`<div class="card hero"><div class="lbl">Gastos da casa · ${esc(titulo)}</div><div class="big">${brl(tot)}</div>
+   <div class="split"><div class="who"><div class="n">Média mensal</div><div class="row"><span>${comDados.length} meses</span><span>${brl(comDados.length?tot/comDados.length:0)}</span></div></div>
+   <div class="who"><div class="n">Mês mais caro</div><div class="row"><span style="text-transform:capitalize">${maior.m?MESES[+maior.m.slice(5)-1].slice(0,3)+'/'+maior.m.slice(2,4):'—'}</span><span>${brl(maior.v)}</span></div></div></div>
+   ${totAnt>0?`<div class="hint" style="margin-top:10px">Comparando ${pares.length} ${pares.length>1?'meses':'mês'} com os mesmos do ano anterior: ${brl(totPar)} × ${brl(totAnt)} (${totPar>=totAnt?'+':''}${Math.round((totPar-totAnt)/totAnt*100)}%)</div>`:'<div class="hint" style="margin-top:10px">Sem dados do ano anterior para comparar.</div>'}</div>`;
+  const vals=ms.map(m=>{const x=pm[m];return x?(catSel?(x.cats[catSel]||0):x.tot):0});
+  h+=`<div class="card chart"><div style="font-weight:800">${catSel?esc(emo(catSel)+' '+catSel)+' por mês':'Gastos por mês'}</div>
+   <div class="hint">${catSel?`<button class="btn light sm" data-act="acat" data-c="" style="margin-top:4px">Ver todas as categorias</button>`:'Toque numa categoria abaixo para ver só ela.'}</div>
+   ${barras(vals,ms.map(m=>({s:ms.length>12?m.slice(5)+'/'+m.slice(2,4):MESES[+m.slice(5)-1].slice(0,3),full:mesLabel(m)})),ms,S.mes,'Gastos por mês em '+titulo)}<div class="tip" id="tip">Toque numa barra para ver o valor · tracejado = média</div></div>`;
+  // categorias
+  const ca={},cp={},acimaN={};
+  for(const m of ms){const x=pm[m];if(!x)continue;for(const c in x.cats)ca[c]=(ca[c]||0)+x.cats[c];if(x.tot>0){const mt=metasDoMes(m,pm);for(const c in x.cats)if(mt[c]>0&&x.cats[c]>mt[c])acimaN[c]=(acimaN[c]||0)+1}}
+  const caPar={};for(const i of pares){const x=pm[ant[i]];for(const c in x.cats)cp[c]=(cp[c]||0)+x.cats[c];const y=pm[ms[i]];for(const c in y.cats)caPar[c]=(caPar[c]||0)+y.cats[c]}
+  const cl=Object.entries(ca).sort((a,b)=>b[1]-a[1]);const mx=cl.length?cl[0][1]:1;const nM=comDados.length||1;
+  h+=`<div class="sec"><h2>Por categoria</h2><span>média/mês · vs ano anterior</span></div><div class="card cats">`+(cl.length?cl.map(([c,v])=>{const pv=cp[c]||0;const d=pv?Math.round(((caPar[c]||0)-pv)/pv*100):null;
+    return `<div class="c" data-act="acat" data-c="${esc(c)}" style="cursor:pointer${catSel===c?';background:#f1f6f3;border-radius:10px':''}"><div class="e">${emo(c)}</div><div><div class="nm">${esc(c)}<small>${pct(v/tot)} · ${brl0(v/nM)}/mês${d===null?'':' · '+(d>0?'+':'')+d+'%'}${acimaN[c]?` · <b style="color:var(--bad)">${acimaN[c]}× acima da meta</b>`:''}</small></div><div class="bar"><i style="width:${(v/mx*100).toFixed(1)}%"></i></div></div><div class="vv">${brl0(v)}</div></div>`}).join(''):'<div class="empty">Sem dados neste período.</div>')+`</div>`;
+  // Dai x Alex
+  const set=new Set(ms);const lista=all.filter(e=>set.has(e.mes));const r=resumo(lista);
+  h+=`<div class="sec"><h2>Dai × Alex</h2><span>${esc(titulo)}</span></div><div class="card"><div class="split">${[['Dai',r.cDai,r.pDai],['Alex',r.cAlex,r.pAlex]].map(([p,c,pg])=>`<div class="who"><div class="n"><i style="background:${cor(p)}"></i>${p}</div><div class="row"><span>Cota</span><span>${brl(c)}</span></div><div class="row"><span>Pagou</span><span>${brl(pg)}</span></div></div>`).join('')}</div>
+   <div class="hint" style="margin-top:8px">Soma dos saldos: ${Math.abs(r.saldoDai)<.01?'zerado':(r.saldoDai>0?'Alex deve ':'Dai deve ')+brl(Math.abs(r.saldoDai))+' para '+(r.saldoDai>0?'Dai':'Alex')}</div></div>`;
+  const lm={};for(const e of lista){if(e.t==='Acerto')continue;if(catSel&&e.t!==catSel)continue;const k=norm(e.l);(lm[k]=lm[k]||{n:e.l,v:0,q:0});lm[k].v+=+e.v;lm[k].q++}
+  const top=Object.values(lm).sort((a,b)=>b.v-a.v).slice(0,10);
+  h+=`<div class="sec"><h2>Onde mais gastamos</h2><span>${catSel?esc(catSel):''}</span></div><div class="list">`+(top.length?top.map(t=>`<div class="it"><div class="x"><b>${esc(t.n)}</b><small>${t.q} compra${t.q>1?'s':''} · média ${brl(t.v/t.q)}</small></div><div class="v">${brl(t.v)}</div></div>`).join(''):'<div class="empty">Sem dados.</div>')+`</div>`;
+  return h;
+}
+function barras(vals,labels,keys,sel,aria){
+  const W=340,H=170,pb=22,n=vals.length,bw=W/n,mx=Math.max(1,...vals);const pos=vals.filter(x=>x>0);const avg=pos.length?pos.reduce((a,b)=>a+b,0)/pos.length:0;
+  const yv=v=>(H-pb)-(v/mx)*(H-pb-14);
+  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(aria)}"><line x1="0" x2="${W}" y1="${H-pb}" y2="${H-pb}" stroke="#e7e4dc"/>
+  ${avg?`<line x1="0" x2="${W}" y1="${yv(avg)}" y2="${yv(avg)}" stroke="#8f938b" stroke-dasharray="3 3" stroke-width="1"/>`:''}
+  ${vals.map((t,i)=>{const x=i*bw+bw*.18,w=bw*.64,y=yv(t);const on=keys[i]===sel;
+   return `<g data-act="bar" data-l="${esc(labels[i].full)}" data-v="${t}"><rect x="${i*bw}" y="0" width="${bw}" height="${H}" fill="transparent"/>
+   ${t>0?`<path d="M${x},${H-pb} V${y+Math.min(4,(H-pb-y))} q0,-${Math.min(4,(H-pb-y))} 4,-${Math.min(4,(H-pb-y))} h${w-8} q4,0 4,${Math.min(4,(H-pb-y))} V${H-pb} Z" fill="${on?'#1f5f4a':'#9fbfb2'}"/>`:''}
+   <text x="${i*bw+bw/2}" y="${H-6}" text-anchor="middle" font-size="10" fill="#8f938b" font-family="Manrope">${labels[i].s}</text></g>`}).join('')}</svg>`;
+}
+function viewAno(){
+  const all=entries();const y=S.ano||S.mes.slice(0,4);S.ano=y;
+  const ms=[...Array(12)].map((_,i)=>y+'-'+String(i+1).padStart(2,'0'));
+  const rs=ms.map(m=>resumo(doMes(all,m)));
+  const catSel=S.acat||null;
+  const listaAno=all.filter(e=>e.mes.startsWith(y+'-'));
+  const vals=ms.map((m,i)=>catSel?(rs[i].cats[catSel]||0):rs[i].tot);
+  const tot=rs.reduce((a,r)=>a+r.tot,0);const nM=rs.filter(r=>r.tot>0).length;
+  const prevY=String(+y-1);const totPrev=[...Array(12)].map((_,i)=>resumo(doMes(all,prevY+'-'+String(i+1).padStart(2,'0'))).tot).reduce((a,b)=>a+b,0);
+  // mesmos meses do ano anterior, para comparar de forma justa
+  const mesesCom=ms.map((m,i)=>rs[i].tot>0?i:-1).filter(i=>i>=0);
+  const totPrevMesmo=mesesCom.reduce((a,i)=>a+resumo(doMes(all,prevY+'-'+String(i+1).padStart(2,'0'))).tot,0);
+  const maior=rs.reduce((b,r,i)=>r.tot>b.v?{v:r.tot,i}:b,{v:0,i:-1});
+  let h=segAn()+`<div class="mnav"><button data-act="yprev">‹</button><b>${y}</b><button data-act="ynext">›</button></div>`;
+  h+=`<div class="card hero"><div class="lbl">Gastos da casa em ${y}</div><div class="big">${brl(tot)}</div>
+   <div class="split"><div class="who"><div class="n">Média mensal</div><div class="row"><span>${nM} meses</span><span>${brl(nM?tot/nM:0)}</span></div></div>
+   <div class="who"><div class="n">Mês mais caro</div><div class="row"><span style="text-transform:capitalize">${maior.i>=0?MESES[maior.i]:'—'}</span><span>${brl(maior.v)}</span></div></div></div>
+   ${totPrevMesmo>0?`<div class="hint" style="margin-top:10px">Nos mesmos ${mesesCom.length} meses de ${prevY}: ${brl(totPrevMesmo)} (${tot>=totPrevMesmo?'+':''}${Math.round((tot-totPrevMesmo)/totPrevMesmo*100)}%) · ${prevY} inteiro: ${brl(totPrev)}</div>`:''}</div>`;
+  h+=`<div class="card chart"><div style="font-weight:800">${catSel?esc(emo(catSel)+' '+catSel)+' por mês':'Gastos por mês'}</div>
+   <div class="hint">${catSel?`<button class="btn light sm" data-act="acat" data-c="" style="margin-top:4px">Ver todas as categorias</button>`:'Toque numa categoria abaixo para ver só ela.'}</div>
+   ${barras(vals,ms.map((m,i)=>({s:MESES[i].slice(0,3),full:mesLabel(m)})),ms,S.mes,'Gastos por mês em '+y)}<div class="tip" id="tip">Toque numa barra para ver o valor · tracejado = média</div></div>`;
+  // categorias do ano
+  const ca={},cp={};for(const r of rs)for(const k in r.cats)ca[k]=(ca[k]||0)+r.cats[k];
+  for(const i of mesesCom){const c=resumo(doMes(all,prevY+'-'+String(i+1).padStart(2,'0'))).cats;for(const k in c)cp[k]=(cp[k]||0)+c[k]}
+  const cl=Object.entries(ca).sort((a,b)=>b[1]-a[1]);const mx=cl.length?cl[0][1]:1;
+  const pmA=porMes(all);const acimaN={};for(const m of ms){if(!pmA[m]||!pmA[m].tot)continue;const mt=metasDoMes(m,pmA);for(const c in pmA[m].cats)if(mt[c]>0&&pmA[m].cats[c]>mt[c])acimaN[c]=(acimaN[c]||0)+1}
+  h+=`<div class="sec"><h2>Por categoria</h2><span>média/mês · vs ${prevY}</span></div><div class="card cats">`+(cl.length?cl.map(([c,v])=>{const pv=cp[c]||0;const d=pv?Math.round((v-pv)/pv*100):null;
+    return `<div class="c" data-act="acat" data-c="${esc(c)}" style="cursor:pointer${catSel===c?';background:#f1f6f3;border-radius:10px':''}"><div class="e">${emo(c)}</div><div><div class="nm">${esc(c)}<small>${pct(v/tot)} · ${brl0(v/(nM||1))}/mês${d===null?'':' · '+(d>0?'+':'')+d+'%'}${acimaN[c]?` · <b style="color:var(--bad)">${acimaN[c]}× acima da meta</b>`:''}</small></div><div class="bar"><i style="width:${(v/mx*100).toFixed(1)}%"></i></div></div><div class="vv">${brl0(v)}</div></div>`}).join(''):'<div class="empty">Sem dados neste ano.</div>')+`</div>`;
+  // Dai x Alex no ano
+  const cD=rs.reduce((a,r)=>a+r.cDai,0),cA=rs.reduce((a,r)=>a+r.cAlex,0),pD=rs.reduce((a,r)=>a+r.pDai,0),pA=rs.reduce((a,r)=>a+r.pAlex,0),sD=pD-cD;
+  h+=`<div class="sec"><h2>Dai × Alex</h2><span>${y}</span></div><div class="card"><div class="split">
+   ${[['Dai',cD,pD],['Alex',cA,pA]].map(([p,c,pg])=>`<div class="who"><div class="n"><i style="background:${cor(p)}"></i>${p}</div><div class="row"><span>Cota</span><span>${brl(c)}</span></div><div class="row"><span>Pagou</span><span>${brl(pg)}</span></div></div>`).join('')}</div>
+   <div class="splitbar" style="margin-top:12px"><i style="width:${(cD+cA)?(cD/(cD+cA)*100).toFixed(1):50}%;background:var(--dai)"></i><i style="flex:1;background:var(--alex)"></i></div>
+   <div class="splitlbl"><span>Dai ${(cD+cA)?pct(cD/(cD+cA)):'—'} das cotas</span><span>Alex ${(cD+cA)?pct(cA/(cD+cA)):'—'}</span></div>
+   <div class="hint" style="margin-top:8px">Soma dos saldos mensais: ${Math.abs(sD)<.01?'zerado':(sD>0?'Alex deve ':'Dai deve ')+brl(Math.abs(sD))+' para '+(sD>0?'Dai':'Alex')} (acertos lançados no app já estão incluídos).</div></div>`;
+  // top lugares do ano
+  const lm={};for(const e of listaAno){if(e.t==='Acerto')continue;if(catSel&&e.t!==catSel)continue;const k=norm(e.l);(lm[k]=lm[k]||{n:e.l,v:0,q:0});lm[k].v+=+e.v;lm[k].q++}
+  const top=Object.values(lm).sort((a,b)=>b.v-a.v).slice(0,10);
+  h+=`<div class="sec"><h2>Onde mais gastamos</h2><span>${y}${catSel?' · '+esc(catSel):''}</span></div><div class="list">`+(top.length?top.map(t=>`<div class="it"><div class="x"><b>${esc(t.n)}</b><small>${t.q} compra${t.q>1?'s':''} · média ${brl(t.v/t.q)}</small></div><div class="v">${brl(t.v)}</div></div>`).join(''):'<div class="empty">Sem dados.</div>')+`</div>`;
+  return h;
+}
 function viewAnalise(){
-  const all=entries();let h=`<div class="mnav"><button data-act="prev">‹</button><b>${mesLabel(S.mes)}</b><button data-act="next">›</button></div>`;
+  if(S.amode==='ano')return viewAno();
+  if(S.amode==='per')return viewPeriodo();
+  const all=entries();let h=segAn()+`<div class="mnav"><button data-act="prev">‹</button><b>${mesLabel(S.mes)}</b><button data-act="next">›</button></div>`;
   // 12 meses
   const ms=[];for(let k=11;k>=0;k--)ms.push(addMes(S.mes,-k));
   const tots=ms.map(m=>resumo(doMes(all,m)).tot);
@@ -471,7 +596,7 @@ function viewAnalise(){
   <line x1="0" x2="${W}" y1="${H-pb}" y2="${H-pb}" stroke="#e7e4dc"/>
   ${avg?`<line x1="0" x2="${W}" y1="${(H-pb)-(avg/mx)*(H-pb-14)}" y2="${(H-pb)-(avg/mx)*(H-pb-14)}" stroke="#8f938b" stroke-dasharray="3 3" stroke-width="1"/>`:''}
   ${tots.map((t,i)=>{const bh=(t/mx)*(H-pb-14);const x=i*bw+bw*.18,w=bw*.64,y=(H-pb)-bh;const on=ms[i]===S.mes;
-    return `<g data-act="bar" data-m="${ms[i]}" data-v="${t}"><rect x="${i*bw}" y="0" width="${bw}" height="${H}" fill="transparent"/>
+    return `<g data-act="bar" data-l="${mesLabel(ms[i])}" data-v="${t}"><rect x="${i*bw}" y="0" width="${bw}" height="${H}" fill="transparent"/>
     ${t>0?`<path d="M${x},${H-pb} V${y+4} q0,-4 4,-4 h${w-8} q4,0 4,4 V${H-pb} Z" fill="${on?'#1f5f4a':'#9fbfb2'}"/>`:''}
     <text x="${i*bw+bw/2}" y="${H-6}" text-anchor="middle" font-size="10" fill="#8f938b" font-family="Manrope">${MESES[+ms[i].slice(5)-1].slice(0,3)}</text></g>`}).join('')}
   </svg><div class="tip" id="tip">Toque numa barra para ver o valor.</div></div>`;
@@ -482,7 +607,7 @@ function viewAnalise(){
   const keys=[...new Set([...Object.keys(cur),...Object.keys(acc)])].map(k=>({k,c:cur[k]||0,a:nm?(acc[k]||0)/nm:0})).sort((a,b)=>Math.max(b.c,b.a)-Math.max(a.c,a.a)).slice(0,10);
   const mx2=Math.max(1,...keys.map(x=>Math.max(x.c,x.a)));
   h+=`<div class="card cats"><div style="font-weight:800">Este mês × média dos ${nm||0} meses anteriores</div><div class="hint" style="margin-bottom:6px">barra = este mês · traço = média</div>`+
-   keys.map(x=>{const d=x.a?(x.c-x.a)/x.a:0;return `<div class="c"><div class="e">${EMO[x.k]||'•'}</div><div><div class="nm">${esc(x.k)}<small>${x.a?((d>0?'+':'')+Math.round(d*100)+'% vs média'):'novo'}</small></div>
+   keys.map(x=>{const d=x.a?(x.c-x.a)/x.a:0;return `<div class="c"><div class="e">${emo(x.k)}</div><div><div class="nm">${esc(x.k)}<small>${x.a?((d>0?'+':'')+Math.round(d*100)+'% vs média'):'novo'}</small></div>
    <div class="bar" style="position:relative;overflow:visible"><i style="width:${(x.c/mx2*100).toFixed(1)}%"></i><b style="position:absolute;top:-3px;left:calc(${(x.a/mx2*100).toFixed(1)}% - 1px);width:2px;height:12px;background:#1d1f1c;border-radius:1px"></b></div></div><div class="vv">${brl0(x.c)}</div></div>`}).join('')+`</div>`;
   // top lugares
   const lm={};for(const e of doMes(all,S.mes)){if(e.t==='Acerto')continue;const k=norm(e.l);(lm[k]=lm[k]||{n:e.l,v:0,q:0});lm[k].v+=+e.v;lm[k].q++}
@@ -493,6 +618,113 @@ function viewAnalise(){
   h+=`<div class="card" style="margin-top:12px"><div style="font-weight:800">Resultado ${y}</div><div class="hint">Soma dos saldos mensais (sem considerar acertos feitos fora do app): ${Math.abs(sAno)<.01?'zerado':(sAno>0?'Alex deve ':'Dai deve ')+brl(Math.abs(sAno))+' para '+(sAno>0?'Dai':'Alex')}</div></div>`;
   return h;
 }
+function usoCats(){const u={};for(const e of entries())u[e.t]=(u[e.t]||0)+1;return u}
+function viewCats(){
+  const l=S.catDraft||cats().map(c=>({...c,_orig:c.nome}));const u=usoCats();
+  return `<div class="card set"><h4>Categorias</h4><p>Edite o emoji, o nome e a divisão padrão (% da Dai). Ao renomear, os lançamentos antigos passam para o novo nome.</p>
+  <div>${l.map((c,i)=>`<div class="cate" data-i="${i}" data-orig="${esc(c._orig||'')}" style="display:grid;grid-template-columns:48px 1fr 62px 34px 34px;gap:6px;align-items:center;padding:7px 0;border-top:${i?'1px solid #f2f0ea':'0'}">
+    <input class="inp" data-k="e" value="${esc(c.e)}" style="padding:9px 4px;text-align:center;font-size:18px" aria-label="Emoji">
+    <div><input class="inp" data-k="nome" value="${esc(c.nome)}" placeholder="Nome da categoria" style="padding:9px 10px"><small style="color:var(--mute);font-size:11px;margin-left:2px">${u[c._orig||c.nome]||0} lançamentos</small></div>
+    <input class="inp" data-k="cd" value="${Math.round((+c.cd)*100)}" inputmode="numeric" style="padding:9px 6px;text-align:center" aria-label="% da Dai">
+    <button class="btn light sm" data-act="catup" data-i="${i}" style="padding:8px 0" aria-label="Subir">↑</button>
+    <button class="btn bad sm" data-act="catdel" data-i="${i}" style="padding:8px 0" aria-label="Excluir">✕</button></div>`).join('')}</div>
+  <div class="hint">Colunas: emoji · nome · % da Dai</div>
+  <div style="display:flex;gap:8px;margin-top:10px"><button class="btn light sm" data-act="catadd">+ Categoria</button>${S.catDraft?'<button class="btn light sm" data-act="catcancel">Desfazer</button>':''}<button class="btn sm" data-act="catsave" style="flex:1">Salvar categorias</button></div></div>`;
+}
+function readCats(){return [...document.querySelectorAll('.cate')].map(r=>{const g=k=>r.querySelector(`[data-k=${k}]`).value;const cd=Math.min(100,Math.max(0,parseFloat(g('cd'))||0))/100;return{nome:g('nome').trim(),e:(g('e').trim()||'•'),cd,_orig:r.dataset.orig||''}})}
+function limparCat(c){return{nome:c.nome,e:c.e,cd:c.cd}}
+async function salvarCats(){
+  const l=readCats().filter(c=>c.nome);const nomes=l.map(c=>c.nome.toLowerCase());
+  if(new Set(nomes).size!==nomes.length){toast('Há duas categorias com o mesmo nome.');return}
+  if(nomes.includes('acerto')){toast('"Acerto" é reservado.');return}
+  if(!l.length){toast('Mantenha pelo menos uma categoria.');return}
+  const ren={...((S.cfg&&S.cfg.renomes)||{}),...(S.renPend||{})};
+  for(const c of l){ if(c._orig&&c._orig!==c.nome) ren[c._orig]=c.nome; if(ren[c.nome]) delete ren[c.nome]; }
+  // renomear também nas contas fixas
+  const fx=((S.cfg&&S.cfg.fixas)||FIXAS_PADRAO).map(f=>({...f,t:(()=>{let t=f.t,k=0;while(ren[t]&&k++<20)t=ren[t];return t})()}));
+  const mt={};for(const [c,v] of Object.entries((S.cfg&&S.cfg.metas)||{})){let t=c,k=0;while(ren[t]&&k++<20)t=ren[t];if(l.some(x=>x.nome===t))mt[t]=v}
+  await saveCfg({...(S.cfg||{}),cats:l.map(limparCat),renomes:ren,fixas:fx,metas:mt});
+  S.catDraft=null;S.renPend=null;toast('Categorias salvas ✓');render();
+}
+function abrirExcluirCat(i){
+  const l=S.catDraft;const c=l[i];const u=usoCats()[c._orig||c.nome]||0;const outras=l.filter((_,j)=>j!==i&&l[j].nome);
+  if(!outras.length){toast('Mantenha pelo menos uma categoria.');return}
+  S.catDel=i;const sh=document.getElementById('sheet');
+  sh.innerHTML=`<div class="grab"></div><h3>Excluir “${esc(c.nome||'(sem nome)')}”<button class="btn light sm" data-act="close">Fechar</button></h3>
+  ${u?`<p class="hint">Ela tem <b>${u} lançamento${u>1?'s':''}</b>. Para onde eles vão?</p><select class="inp" id="catdest">${outras.map(o=>`<option>${esc(o.nome)}</option>`).join('')}</select>`:'<p class="hint">Nenhum lançamento usa esta categoria.</p>'}
+  <div class="actions"><button class="btn bad" data-act="catdelok">Excluir categoria</button></div><p class="hint">A exclusão só vale depois de tocar em <b>Salvar categorias</b>.</p>`;
+  document.getElementById('scrim').classList.add('on');sh.classList.add('on');
+}
+function confirmarExcluirCat(){
+  const l=S.catDraft;const i=S.catDel;const c=l[i];const sel=document.getElementById('catdest');
+  if(c._orig&&sel){S.renPend={...(S.renPend||{}),[c._orig]:sel.value}}
+  l.splice(i,1);S.catDraft=l;closeSheet();render();toast('Toque em Salvar categorias para confirmar.');
+}
+function viewLugares(){
+  const q=norm(S.lq||'');const ord=S.lord||'tot';
+  let l=(IDX||[]).filter(r=>!q||r.k.includes(q));
+  l.sort((a,b)=>ord==='nome'?a.nome.localeCompare(b.nome):ord==='n'?b.n-a.n:b.tot-a.tot);
+  const tot=l.length;l=l.slice(0,150);
+  return `<div class="mnav"><button data-act="tab" data-t="ajustes">‹</button><b style="font-size:20px">Fornecedores</b><span style="width:40px"></span></div>
+  <input class="inp" id="lq" placeholder="Buscar lugar…" value="${esc(S.lq||'')}" autocomplete="off">
+  <div class="chips" style="margin:10px 0">${[['tot','Mais gasto'],['n','Mais compras'],['nome','A–Z']].map(([k,t])=>`<button class="chip ${ord===k?'on':''}" data-act="lord" data-o="${k}">${t}</button>`).join('')}</div>
+  <div class="hint" style="margin-bottom:8px">${tot} lugares${tot>150?' · mostrando 150, use a busca':''}. Toque para editar.</div>
+  <div class="list">${l.map(r=>`<button class="it" data-act="lug" data-k="${esc(r.k)}"><div class="ic">${emo(r.t)}</div><div class="x"><b>${esc(r.nome)}${r.oculto?' <span class="tag" style="background:#eee;color:#777">oculto</span>':''}</b><small>${esc(r.t)} · Dai ${pct(isNaN(r.cd)?cotaCat(r.t):r.cd)} · ${r.n} compra${r.n>1?'s':''}${r.fix?' · ajustado':''}</small></div><div class="v">${brl0(r.tot)}</div></button>`).join('')||'<div class="empty">Nenhum lugar encontrado.</div>'}</div>`;
+}
+function abrirLugar(k){
+  const r=IDX.find(x=>x.k===k);if(!r)return;const o=lugCfg()[kk(k)]||{};S.lugK=k;
+  const outros=[...IDX].filter(x=>x.k!==k).sort((a,b)=>b.n-a.n).slice(0,300);
+  const sh=document.getElementById('sheet');
+  sh.innerHTML=`<div class="grab"></div><h3>${esc(r.nome)}<button class="btn light sm" data-act="close">Fechar</button></h3>
+  <p class="hint">${r.n} compras · total ${brl(r.tot)} · média ${brl(r.tot/r.n)}</p>
+  <div class="fld"><label>Nome</label><input class="inp" id="lgn" value="${esc(r.nome)}"><div class="hint">Muda em todos os lançamentos. Para <b>juntar</b> com outro lugar, use o mesmo nome dele ou escolha abaixo.</div></div>
+  <div class="fld"><label>Juntar com</label><select class="inp" id="lgj"><option value="">— não juntar —</option>${outros.map(x=>`<option value="${esc(x.nome)}">${esc(x.nome)} (${x.n})</option>`).join('')}</select></div>
+  <div class="fld"><label>Categoria padrão</label><select class="inp" id="lgt"><option value="">Automática (a mais usada: ${esc(r.t)})</option>${cats().map(c=>`<option ${o.t===c.nome?'selected':''}>${esc(c.nome)}</option>`).join('')}</select></div>
+  <div class="fld"><label>Divisão padrão (% da Dai)</label><input class="inp" id="lgc" inputmode="numeric" placeholder="Automática (${pct(isNaN(r.cd)?cotaCat(r.t):r.cd)})" value="${o.cd!=null&&o.cd!==''?Math.round(o.cd*100):''}"></div>
+  <label class="fld" style="display:flex;gap:10px;align-items:center;font-weight:600"><input type="checkbox" id="lgo" ${o.oculto?'checked':''} style="width:20px;height:20px;accent-color:var(--acc)"> Esconder das sugestões</label>
+  <p class="hint">Categoria e divisão padrão valem para os <b>próximos</b> lançamentos sugeridos; os antigos não mudam.</p>
+  <div class="actions"><button class="btn" data-act="lugsave">Salvar</button></div>`;
+  document.getElementById('scrim').classList.add('on');sh.classList.add('on');
+}
+async function salvarLugar(){
+  const k=S.lugK;const r=IDX.find(x=>x.k===k);if(!r)return;
+  const nome=(document.getElementById('lgj').value||document.getElementById('lgn').value).trim();
+  const t=document.getElementById('lgt').value;const cdv=document.getElementById('lgc').value.trim();const oc=document.getElementById('lgo').checked;
+  if(!nome){toast('Informe um nome.');return}
+  const L={...lugCfg()};
+  // membros do grupo: nomes originais (sem apelido) que hoje aparecem como este lugar
+  const originais=new Set();
+  for(const doc of Object.values(S.hist))for(const a of (doc.items||[])){const l=Array.isArray(a)?a[3]:a.l;if(norm(aliasL(l))===k)originais.add(l)}
+  for(const tx of S.tx){if(tx.l&&norm(aliasL(tx.l))===k)originais.add(tx.l)}
+  for(const key of Object.keys(L)){if(L[key]&&L[key].alias&&norm(aliasL(L[key].alias))===k)originais.add(L[key].alias)}
+  if(norm(nome)!==k||nome!==r.nome){for(const l of originais){if(l!==nome)L[kk(l)]={...(L[kk(l)]||{}),alias:nome}}}
+  const alvo=kk(nome);const cur={...(L[alvo]||{})};delete cur.alias;
+  if(t)cur.t=t;else delete cur.t;
+  if(cdv!==''){cur.cd=Math.min(100,Math.max(0,parseFloat(cdv)||0))/100}else delete cur.cd;
+  if(oc)cur.oculto=true;else delete cur.oculto;
+  L[alvo]=cur;
+  await saveCfg({...(S.cfg||{}),lugares:L});closeSheet();toast('Fornecedor salvo ✓');
+}
+function viewMetas(){
+  const pm=porMes(entries());const mref=ym(new Date());const {md,n}=mediasCat(mref,pm);const ov=(S.cfg&&S.cfg.metas)||{};
+  const l=cats().map(c=>({c:c.nome,e:c.e,a:md[c.nome]||0,o:ov[c.nome]}));
+  return `<div class="card set"><h4>Metas mensais por categoria</h4><p>A meta padrão é a <b>média dos últimos ${n||12} meses</b> e se atualiza sozinha todo mês. Digite um valor para fixar outra meta; deixe em branco para voltar à média.</p>
+  <div>${l.map((x,i)=>`<div class="mte" data-c="${esc(x.c)}" style="display:grid;grid-template-columns:28px 1fr 110px;gap:8px;align-items:center;padding:7px 0;border-top:${i?'1px solid #f2f0ea':'0'}">
+   <div style="font-size:18px;text-align:center">${x.e}</div><div><b style="font-size:14px">${esc(x.c)}</b><small style="display:block;color:var(--mute);font-size:11.5px">média: ${brl0(x.a)}</small></div>
+   <input class="inp" data-k="m" inputmode="decimal" placeholder="${brl0(x.a).replace('R$ ','')}" value="${x.o!=null&&x.o!==''?String(x.o).replace('.',','):''}" style="padding:9px 10px;text-align:right"></div>`).join('')}</div>
+  <div style="display:flex;gap:8px;margin-top:10px"><button class="btn light sm" data-act="metareset">Todas pela média</button><button class="btn sm" data-act="metasave" style="flex:1">Salvar metas</button></div></div>`;
+}
+async function salvarMetas(reset){const m={};if(!reset)document.querySelectorAll('.mte').forEach(r=>{const v=parseVal(r.querySelector('[data-k=m]').value);if(v>=0)m[r.dataset.c]=Math.round(v*100)/100});
+  await saveCfg({...(S.cfg||{}),metas:m});toast(reset?'Metas voltaram para a média ✓':'Metas salvas ✓');render()}
+function abrirMeta(c){const pm=porMes(entries());const {md,n}=mediasCat(S.mes,pm);const ov=(S.cfg&&S.cfg.metas)||{};S.metaC=c;
+  const sh=document.getElementById('sheet');
+  sh.innerHTML=`<div class="grab"></div><h3>${emo(c)} Meta de ${esc(c)}<button class="btn light sm" data-act="close">Fechar</button></h3>
+  <p class="hint">Média dos últimos ${n} meses: <b>${brl(md[c]||0)}</b>. Deixe em branco para usar a média.</p>
+  <div class="amt"><span>R$</span><input id="fmeta" inputmode="decimal" placeholder="${(md[c]||0).toFixed(2).replace('.',',')}" value="${ov[c]!=null&&ov[c]!==''?String(ov[c]).replace('.',','):''}"></div>
+  <div class="actions"><button class="btn light" data-act="metaavg">Usar a média</button><button class="btn" data-act="metaone">Salvar meta</button></div>`;
+  document.getElementById('scrim').classList.add('on');sh.classList.add('on')}
+async function salvarMeta(usarMedia){const c=S.metaC;const m={...((S.cfg&&S.cfg.metas)||{})};const v=parseVal(document.getElementById('fmeta').value);
+  if(usarMedia||!(v>=0))delete m[c];else m[c]=Math.round(v*100)/100;await saveCfg({...(S.cfg||{}),metas:m});closeSheet();toast('Meta salva ✓')}
 function viewAjustes(){
   const fx=(S.cfg&&S.cfg.fixas)||FIXAS_PADRAO;const url=APP_URL.startsWith('__')?'(link do app)':APP_URL;
   return `<div class="card set"><h4>Quem está usando este celular</h4><div class="seg">${['Dai','Alex'].map(p=>`<button class="${S.me===p?'on':''}" data-act="setme" data-p="${p}">${p}</button>`).join('')}</div><p>Os lançamentos e capturas deste aparelho entram como pagos por <b>${esc(S.me||'—')}</b>.</p></div>
@@ -509,11 +741,14 @@ function viewAjustes(){
   <p>Ao pagar, o app abre com o lançamento pronto (loja reconhecida, categoria e divisão sugeridas). <b>Aceitar</b> grava; <b>Depois</b> deixa na fila de revisão; <b>Recusar</b> descarta.</p>
   <p>Link de teste: <span class="mono">${esc(url)}#nfc-15233-ZAFFARI-HIGIENOPOLIS</span></p>
   <button class="btn ghost sm" data-act="simular">Simular uma captura agora</button></div>
+  <div class="card set"><h4>Fornecedores (lugares)</h4><p>Junte nomes repetidos (ZAffari, Zaffari CG…), renomeie, defina categoria e divisão padrão de cada lugar e esconda das sugestões os que não se repetem.</p><button class="btn sm" data-act="lugares">Gerenciar fornecedores (${IDX?IDX.length:0})</button></div>
+  ${viewMetas()}
+  ${viewCats()}
   <div class="card set"><h4>Contas fixas do mês</h4><p>Palavras-chave reconhecem a conta já lançada (separadas por vírgula).</p>
   <div id="fxed">${fx.map((f,i)=>`<div class="fxe" data-i="${i}">
    <input class="inp" data-k="nome" value="${esc(f.nome)}" placeholder="Nome"><input class="inp" data-k="dia" value="${f.dia}" inputmode="numeric" placeholder="Dia">
    <input class="inp" data-k="v" value="${String(f.v).replace('.',',')}" inputmode="decimal" placeholder="Valor previsto"><input class="inp" data-k="cd" value="${Math.round(f.cd*100)}" inputmode="numeric" placeholder="% Dai">
-   <select class="inp" data-k="t">${CATS.map(([c])=>`<option ${c===f.t?'selected':''}>${c}</option>`).join('')}</select><button class="btn bad sm" data-act="fxdel" data-i="${i}">Remover</button>
+   <select class="inp" data-k="t">${cats().map(c=>`<option ${c.nome===f.t?'selected':''}>${esc(c.nome)}</option>`).join('')}</select><button class="btn bad sm" data-act="fxdel" data-i="${i}">Remover</button>
    <input class="inp" data-k="chaves" value="${esc(f.chaves)}" placeholder="aluguel,condom" style="grid-column:1/3"></div>`).join('')}</div>
   <div style="display:flex;gap:8px;margin-top:10px"><button class="btn light sm" data-act="fxadd">+ Conta</button><button class="btn sm" data-act="fxsave" style="flex:1">Salvar contas fixas</button></div></div>
   <div class="card set"><h4>Histórico da planilha</h4><p>${Object.keys(S.hist).length?`${Object.keys(S.hist).length} meses importados da planilha Contas Casa.`:'Ainda não importado. Escolha o arquivo <b>historico-contas-casa.json</b> (salve no app Arquivos do iPhone antes).'}</p>
@@ -533,15 +768,15 @@ function openForm(opts={}){
   if(e&&!F.isHist){F.txId=e.id}
   if(e&&e.ref){F.txId=e.id}
   if(p){const g=casarComerciante(p.raw)||regraComerciante(p.raw);if(g){applySug(g,true)}else{F.l=titleCase(p.raw)}}
-  if(!F.t&&!F.acerto)F.t='Super';
-  if(F.cd==null)F.cd=COTA_CAT[F.t]??.5;
+  if(!F.t&&!F.acerto)F.t=cats()[0].nome;
+  if(F.cd==null)F.cd=cotaCat(F.t);
   drawForm(opts.focus!==false&&!e&&!p);
   document.getElementById('scrim').classList.add('on');document.getElementById('sheet').classList.add('on');
 }
 function titleCase(s){return (s||'').toLowerCase().replace(/\b\w/g,c=>c.toUpperCase())}
 function applySug(r,keepV){
   F.l=r.nome;F.t=r.t;const last=r.last;
-  F.cd=isNaN(r.cd)?(COTA_CAT[r.t]??.5):r.cd;F.autoT=false;F.autoCd=false;F.sug=r;
+  F.cd=isNaN(r.cd)?(cotaCat(r.t)):r.cd;F.autoT=false;F.autoCd=false;F.sug=r;
   if(!keepV&&(F.v===''||F.v==null)){} // não preenche valor automaticamente
 }
 function drawForm(focus){
@@ -554,11 +789,11 @@ function drawForm(focus){
   <div class="amt"><span>R$</span><input id="fv" inputmode="decimal" placeholder="0,00" value="${F.v===''?'':esc(typeof F.v==='number'?F.v.toFixed(2).replace('.',','):F.v)}"></div>
   ${F.acerto?`<p class="hint">Quem transferiu o dinheiro para o outro:</p>`:`
   <div class="fld"><label>Onde</label><input class="inp" id="fl" placeholder="Ex.: Zaffari, Gasolina, Ifood…" value="${esc(F.l)}" autocomplete="off" autocapitalize="words">
-   ${sugs.length&&!F.sug?`<div class="sugs">${sugs.map((r,i)=>`<button class="sug" data-act="sug" data-k="${esc(r.k)}"><span><b>${esc(r.nome)}</b><br><small>${EMO[r.t]||''} ${esc(r.t)} · ${r.n}× · último ${brl(r.last.v)}</small></span><small>›</small></button>`).join('')}</div>`:''}
-   ${quick.length?`<div class="chips scroll" style="margin-top:8px">${quick.map(r=>`<button class="chip" data-act="sug" data-k="${esc(r.k)}">${EMO[r.t]||''} ${esc(r.nome)}</button>`).join('')}</div>`:''}
+   ${sugs.length&&!F.sug?`<div class="sugs">${sugs.map((r,i)=>`<button class="sug" data-act="sug" data-k="${esc(r.k)}"><span><b>${esc(r.nome)}</b><br><small>${emo(r.t)} ${esc(r.t)} · ${r.n}× · último ${brl(r.last.v)}</small></span><small>›</small></button>`).join('')}</div>`:''}
+   ${quick.length?`<div class="chips scroll" style="margin-top:8px">${quick.map(r=>`<button class="chip" data-act="sug" data-k="${esc(r.k)}">${emo(r.t)} ${esc(r.nome)}</button>`).join('')}</div>`:''}
    ${lastInfo?`<div class="hint">${lastInfo}</div>`:''}
   </div>
-  <div class="fld"><label>Categoria</label><div class="chips scroll">${CATS.filter(c=>c[0]!=='Acerto').map(([c,e])=>`<button class="chip ${F.t===c?'on':''}" data-act="cat" data-c="${c}">${e} ${c}</button>`).join('')}</div></div>`}
+  <div class="fld"><label>Categoria</label><div class="chips scroll">${cats().map(c=>`<button class="chip ${F.t===c.nome?'on':''}" data-act="cat" data-c="${esc(c.nome)}">${c.e} ${esc(c.nome)}</button>`).join('')}</div></div>`}
   <div class="fld"><label>${F.acerto?'Pagou':'Quem pagou'}</label><div class="seg">${['Dai','Alex'].map(p=>`<button class="${F.p===p?'on':''}" data-act="payer" data-p="${p}">${p}</button>`).join('')}</div></div>
   ${F.acerto?`<p class="hint">${F.p} transfere ${brl(v)} para ${outro(F.p)}.</p>`:`
   <div class="fld"><label>Divisão</label><div class="chips">${[[.6,'60/40'],[.5,'50/50'],[1,'Só Dai'],[0,'Só Alex']].map(([x,l])=>`<button class="chip ${Math.abs(cd-x)<.001?'on':''}" data-act="cd" data-x="${x}">${l}</button>`).join('')}</div>
@@ -625,7 +860,7 @@ document.addEventListener('click',async ev=>{
     case 'edit':{const e=all().find(x=>x.id===b.dataset.id);if(e)openForm({edit:e});break}
     case 'rev':{const p=S.pend.find(x=>x._id===b.dataset.id);if(p)openForm({pend:p});break}
     case 'sug':{const r=IDX.find(x=>x.k===b.dataset.k);if(r){applySug(r);drawForm(false);if(!(parseVal(F.v)>0))document.getElementById('fv').focus()}break}
-    case 'cat':F.t=b.dataset.c;if(F.autoCd)F.cd=COTA_CAT[F.t]??.5;drawForm(false);break;
+    case 'cat':F.t=b.dataset.c;if(F.autoCd)F.cd=cotaCat(F.t);drawForm(false);break;
     case 'payer':F.p=b.dataset.p;drawForm(false);break;
     case 'cd':F.cd=+b.dataset.x;F.autoCd=false;updSplit(true);document.getElementById('fcd').value=Math.round(F.cd*100);break;
     case 'salvar':salvar();break;
@@ -636,7 +871,32 @@ document.addEventListener('click',async ev=>{
     case 'fixa':{const list=doMes(all(),S.mes);const f=fixasStatus(list,S.mes)[+b.dataset.i];
       if(f.st==='ok'&&f.hits.length===1){openForm({edit:f.hits[0]});break}
       openForm({l:f.nome,t:f.t,cd:f.cd,v:String(f.v).replace('.',','),focus:false});F.d=S.mes===ym(new Date())?today():S.mes+'-'+String(Math.min(f.dia,28)).padStart(2,'0');drawForm(false);break}
-    case 'bar':document.getElementById('tip').innerHTML=`<b>${mesLabel(b.dataset.m)}</b>: ${brl(+b.dataset.v)}`;break;
+    case 'bar':document.getElementById('tip').innerHTML=`<b>${esc(b.dataset.l)}</b>: ${brl(+b.dataset.v)}`;break;
+    case 'amode':S.amode=b.dataset.m;S.acat=null;if(S.amode==='ano')S.ano=S.mes.slice(0,4);render();break;
+    case 'per':{const k=b.dataset.k;const P=S.per||{};const a=P.ano||ym(new Date()).slice(0,4);
+      if(k==='s1'||k==='s2')S.per={tipo:'s',ano:a,sem:k==='s1'?1:2};else if(k[0]==='u')S.per={tipo:'u',n:+k.slice(1),ano:a};else{const pa=periodoAtual();S.per={tipo:'c',de:pa.ms[0],ate:pa.ms[pa.ms.length-1],ano:a}}
+      render();break}
+    case 'pprev':{const P=S.per;if(P.sem===2)P.sem=1;else{P.sem=2;P.ano=String(+P.ano-1)}render();break}
+    case 'pnext':{const P=S.per;if(P.sem===1)P.sem=2;else{P.sem=1;P.ano=String(+P.ano+1)}render();break}
+    case 'yprev':S.ano=String(+S.ano-1);S.acat=null;render();break;
+    case 'ynext':S.ano=String(+S.ano+1);S.acat=null;render();break;
+    case 'acat':S.acat=b.dataset.c||null;render();window.scrollTo({top:0,behavior:'smooth'});break;
+    case 'catup':{const l=readCats();const i=+b.dataset.i;if(i>0){[l[i-1],l[i]]=[l[i],l[i-1]];S.catDraft=l;render()}break}
+    case 'catadd':{const l=readCats();l.push({nome:'',e:'•',cd:.5,_novo:1});S.catDraft=l;render();setTimeout(()=>{const x=document.querySelectorAll('.cate [data-k=nome]');x[x.length-1]?.focus()},50);break}
+    case 'catdel':{const l=readCats();S.catDraft=l;abrirExcluirCat(+b.dataset.i);break}
+    case 'catdelok':confirmarExcluirCat();break;
+    case 'catsave':salvarCats();break;
+    case 'metasave':salvarMetas(false);break;
+    case 'metareset':salvarMetas(true);break;
+    case 'metaedit':abrirMeta(b.dataset.c);break;
+    case 'metaone':salvarMeta(false);break;
+    case 'metaavg':salvarMeta(true);break;
+    case 'lugares':S.tab='lugares';render();window.scrollTo(0,0);break;
+    case 'tab':S.tab=b.dataset.t;render();window.scrollTo(0,0);break;
+    case 'lord':S.lord=b.dataset.o;render();break;
+    case 'lug':abrirLugar(b.dataset.k);break;
+    case 'lugsave':salvarLugar();break;
+    case 'catcancel':S.catDraft=null;render();break;
     case 'copy':copyMes();break;
     case 'logout':logout();break;
     case 'simular':location.hash='nfc-'+(1000+Math.floor(Math.random()*20000))+'-ZAFFARI-HIGIENOPOLIS';S.tab='mes';render();break;
@@ -645,7 +905,7 @@ document.addEventListener('click',async ev=>{
     case 'fxsave':{await saveCfg({...(S.cfg||{}),fixas:readFixas()});toast('Contas fixas salvas ✓');break}
   }
 });
-document.addEventListener('change',e=>{if(e.target.id==='fhist'&&e.target.files[0])importarHist(e.target.files[0])});
+document.addEventListener('change',e=>{if((e.target.id==='pde'||e.target.id==='pate')&&e.target.value&&S.per){S.per[e.target.id==='pde'?'de':'ate']=e.target.value;render();return}if(e.target.id==='fhist'&&e.target.files[0])importarHist(e.target.files[0])});
 document.getElementById('scrim').onclick=()=>{if(S.me)closeSheet()};
 document.getElementById('fab').onclick=()=>openForm({});
 document.getElementById('meBtn').onclick=()=>askMe();
