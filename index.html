@@ -517,7 +517,7 @@ function viewAjustes(){
    <input class="inp" data-k="chaves" value="${esc(f.chaves)}" placeholder="aluguel,condom" style="grid-column:1/3"></div>`).join('')}</div>
   <div style="display:flex;gap:8px;margin-top:10px"><button class="btn light sm" data-act="fxadd">+ Conta</button><button class="btn sm" data-act="fxsave" style="flex:1">Salvar contas fixas</button></div></div>
   <div class="card set"><h4>Histórico da planilha</h4><p>${Object.keys(S.hist).length?`${Object.keys(S.hist).length} meses importados da planilha Contas Casa.`:'Ainda não importado. Escolha o arquivo <b>historico-contas-casa.json</b> (salve no app Arquivos do iPhone antes).'}</p>
-  <label class="btn light sm" style="display:inline-block">${Object.keys(S.hist).length?'Reimportar':'Importar histórico'}<input type="file" accept=".json,application/json" id="fhist" style="display:none"></label></div>
+  <label class="btn light sm" style="display:inline-block">${Object.keys(S.hist).length?'Reimportar':'Importar histórico'}<input type="file" id="fhist" style="display:none"></label></div>
   <div class="card set"><h4>Conta</h4><p>${S.local?'Modo local (sem Firebase).':'Conectado como <b>'+esc(S.email||'')+'</b>. Lançamentos sincronizam entre os celulares de vocês.'}</p>${S.local?'':'<button class="btn light sm" data-act="logout">Sair</button>'}
   <p>${IDX?IDX.length:0} lugares conhecidos para sugestão · ${entries().length} lançamentos no total.</p></div>`;
 }
