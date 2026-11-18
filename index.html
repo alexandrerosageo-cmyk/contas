@@ -206,7 +206,7 @@ function entries(){
   const ov={},out=[];
   for(const t of S.tx) if(t.ref) ov[t.ref]=t;
   for(const [mes,doc] of Object.entries(S.hist)){
-    (doc.items||[]).forEach((a,i)=>{const id='h:'+mes+':'+i;const o=ov[id];
+    (doc.items||[]).forEach((a,i)=>{if(!Array.isArray(a))a=[a.d,a.v,a.p,a.l,a.t,a.cd];const id='h:'+mes+':'+i;const o=ov[id];
       if(o){if(!o.del)out.push({...o,id:o._id,mes:o.mes||mes,src:'planilha'})}
       else out.push({id,d:a[0],v:a[1],p:a[2],l:a[3],t:a[4],cd:a[5],mes,src:'planilha'})});
   }
@@ -299,7 +299,7 @@ function localSync(){S.tx=Object.values(mem.tx);S.pend=Object.values(mem.pend);l
 function dbErr(e){const c=e&&e.code;
   if(c==='permission-denied'){S.denied=true;toast('Este e-mail não tem permissão no banco.')}
   else if(c==='quota_exceeded')toast('Limite de armazenamento atingido.');
-  else toast('Não foi possível salvar agora. Tente de novo.');
+  else toast('Não foi possível salvar ('+(c||(e&&e.message)||'erro')+'). Tente de novo.');
   render();
 }
 
@@ -357,7 +357,7 @@ async function importarHist(file){
   let data;try{data=JSON.parse(await file.text())}catch(e){toast('Arquivo inválido.');return}
   const meses=Object.keys(data).filter(k=>/^\d{4}-\d{2}$/.test(k)&&Array.isArray(data[k]));
   if(!meses.length){toast('Arquivo sem meses válidos.');return}
-  let n=0;for(const m of meses){try{await S.db.doc('hist/'+m).set({items:data[m],origem:'planilha'});n++;toast('Importando… '+n+'/'+meses.length)}catch(e){dbErr(e);return}}
+  let n=0;for(const m of meses){try{await S.db.doc('hist/'+m).set({items:data[m].map(a=>Array.isArray(a)?{d:a[0],v:a[1],p:a[2],l:a[3],t:a[4],cd:a[5]}:a),origem:'planilha'});n++;toast('Importando… '+n+'/'+meses.length)}catch(e){dbErr(e);return}}
   toast('Histórico importado ✓ ('+n+' meses)');
 }
 async function setMe(nome){
