@@ -288,11 +288,13 @@ function metasDoMes(mref,pm){const {md}=mediasCat(mref,pm);const ov=(S.cfg&&S.cf
   for(const c of new Set([...Object.keys(md),...Object.keys(ov)])){const o=ov[resolveCat(c)]??ov[c];out[resolveCat(c)]=(o!=null&&o!=='')?+o:(md[c]||0)}return out}
 function saldoMesCasa(m,gasto,quem){
   if(typeof FIN_WS==='undefined')return null;const atual=S.fin;let rec=0,tem=false;
-  for(const w of [quem==='Dai'?'dai':'alex']){const W=S.fins[w];if(!W||(!W.cfg&&!Object.keys(W.meses).length))continue;S.fin=W;for(const f of fcfg().fontes){const v=fRec(m,f);if(v){rec+=v;tem=true}}}
+  let fin=0;const SEM=['Cartão','Moradia'];
+  for(const w of [quem==='Dai'?'dai':'alex']){const W=S.fins[w];if(!W||(!W.cfg&&!Object.keys(W.meses).length))continue;S.fin=W;for(const f of fcfg().fontes){const v=fRec(m,f);if(v){rec+=v;tem=true}}
+    for(const i of fcfg().itens){if(SEM.includes(i.tipo))continue;fin+=fComp(m,i).v}}
   S.fin=atual;if(!tem||rec<=0)return null;
-  const saldo=rec-gasto,marg=saldo/rec;
-  const [emo,cor,dica]=saldo<0?['😟','var(--bad)','O que você pagou da casa passou da sua receita do mês']:marg<=.05?['🛑','var(--bad)','Pare: folga de até 5% da receita']:marg<=.15?['⚠️','var(--warn)','Atenção: folga de até 15% da receita']:['✅','#1f6b45','Folga confortável (mais de 15% da receita)'];
-  return {rec,saldo,marg,emo,cor,dica};
+  const saldo=rec-gasto-fin,marg=saldo/rec;
+  const [emo,cor,dica]=saldo<0?['😟','var(--bad)','Os compromissos do mês passaram da sua receita']:marg<=.05?['🛑','var(--bad)','Pare: folga de até 5% da receita']:marg<=.15?['⚠️','var(--warn)','Atenção: folga de até 15% da receita']:['✅','#1f6b45','Folga confortável (mais de 15% da receita)'];
+  return {rec,saldo,marg,emo,cor,dica,gasto,fin};
 }
 function fixasStatus(list,m){
   const fx=(S.cfg&&S.cfg.fixas)||FIXAS_PADRAO;
@@ -481,9 +483,9 @@ function viewMes(){
   }
   // herói
   const deve=r.saldoDai>0.005?'Alex':r.saldoDai<-0.005?'Dai':null;
-  const sm=S.me?saldoMesCasa(S.mes,S.me==='Dai'?r.pDai:r.pAlex,S.me):null;
+  const sm=S.me?saldoMesCasa(S.mes,0,S.me):null;
   h+=`<div class="card hero"><div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px"><div style="min-width:0"><div class="lbl">Gastos da casa no mês</div><div class="big">${brl(r.tot)}</div></div>
-  ${sm?`<button data-act="gofin" title="${esc(sm.dica)}" style="all:unset;cursor:pointer;text-align:right;flex:0 0 auto;padding-top:2px"><div style="font-size:22px;line-height:1">${sm.emo}</div><div style="font-size:11px;color:var(--ink2);font-weight:600;margin-top:4px">${esc(S.me)}: receita ${brl0(sm.rec)}</div><div style="font-size:11px;color:var(--ink2);font-weight:600">você pagou ${brl0(sm.rec-sm.saldo)}</div><div style="font-size:13px;font-weight:800;color:${sm.cor};white-space:nowrap">saldo ${sm.saldo<0?'−':''}${brl0(Math.abs(sm.saldo))}</div><div style="font-size:10.5px;color:var(--mute);font-weight:600">${sm.saldo<0?'acima da receita':pct(sm.marg)+' de folga'}</div></button>`:''}</div>
+  ${sm?`<button data-act="gofin" title="${esc(sm.dica)}" style="all:unset;cursor:pointer;text-align:right;flex:0 0 auto;padding-top:2px"><div style="font-size:22px;line-height:1">${sm.emo}</div><div style="font-size:11px;color:var(--ink2);font-weight:600;margin-top:4px">${esc(S.me)}: receita ${brl0(sm.rec)}</div>${sm.fin?`<div style="font-size:11px;color:var(--ink2);font-weight:600">− empréstimos etc. ${brl0(sm.fin)}</div>`:''}<div style="font-size:13px;font-weight:800;color:${sm.cor};white-space:nowrap">saldo ${sm.saldo<0?'−':''}${brl0(Math.abs(sm.saldo))}</div><div style="font-size:10.5px;color:var(--mute);font-weight:600">${sm.saldo<0?'acima da receita':pct(sm.marg)+' de folga'}</div></button>`:''}</div>
   <div class="split">
    ${['Dai','Alex'].map(p=>`<div class="who"><div class="n"><i style="background:${cor(p)}"></i>${p}</div>
      <div class="row"><span>Cota</span><span>${brl(p==='Dai'?r.cDai:r.cAlex)}</span></div>
