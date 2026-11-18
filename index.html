@@ -32,7 +32,11 @@ input,select,textarea{font-size:16px}
 .hero .lbl{color:var(--ink2);font-size:13px;font-weight:600}
 .hero .big{font-size:34px;font-weight:800;letter-spacing:-.03em;margin:2px 0 10px}
 .split{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-.who{border-radius:14px;padding:10px 12px;background:#faf9f6;border:1px solid var(--line)}
+.who{border-radius:14px;padding:10px 12px;background:#faf9f6;border:1px solid var(--line);min-width:0;width:100%;color:inherit}
+.split>*{min-width:0}
+.who .row{gap:6px}
+.who .row span:last-child{white-space:nowrap}
+.who .row span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .who .n{font-weight:700;font-size:13px;display:flex;align-items:center;gap:6px}
 .who .n i{width:8px;height:8px;border-radius:50%}
 .who .row{display:flex;justify-content:space-between;font-size:12.5px;color:var(--ink2);margin-top:4px}
@@ -187,7 +191,7 @@ const FIXAS_PADRAO=[
   {nome:'Luz (CEEE)',t:'CEEE',dia:26,v:350,cd:.5,chaves:'ceee,luz'},
 ];
 /* ===================== estado ===================== */
-const S={fin:{cfg:null,meses:{}},alu:{cfg:null,meses:{}},db:null,user:null,uid:null,me:null,hist:{},tx:[],pend:[],cfg:null,mes:ym(new Date()),tab:'mes',loaded:{hist:false,tx:false},local:false,ro:false,queueHash:null};
+const S={fins:{dai:{cfg:null,meses:{}},alex:{cfg:null,meses:{}}},fin:null,fw:null,alu:{cfg:null,meses:{}},db:null,user:null,uid:null,me:null,hist:{},tx:[],pend:[],cfg:null,mes:ym(new Date()),tab:'mes',loaded:{hist:false,tx:false},local:false,ro:false,queueHash:null};
 let IDX=null; // índice de sugestões
 /* ===================== utils ===================== */
 function ym(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')}
@@ -331,7 +335,7 @@ function wrapFirestore(fs,fdb){
   return {doc:D,collection:C};
 }
 let unsubs=[];
-function stopData(){unsubs.forEach(u=>{try{u()}catch(e){}});unsubs=[];S.fin={cfg:null,meses:{}};S.alu={cfg:null,meses:{}};S.hist={};S.tx=[];S.pend=[];S.cfg=null;S.loaded={hist:false,tx:false}}
+function stopData(){unsubs.forEach(u=>{try{u()}catch(e){}});unsubs=[];S.fins={dai:{cfg:null,meses:{}},alex:{cfg:null,meses:{}}};S.fin=S.fins.dai;S.alu={cfg:null,meses:{}};S.hist={};S.tx=[];S.pend=[];S.cfg=null;S.loaded={hist:false,tx:false}}
 async function startData(){
   stopData();const db=S.db;
   const to=setTimeout(()=>{if(!S.loaded.tx){S.slow=true;render()}},10000);
@@ -341,8 +345,10 @@ async function startData(){
   unsubs.push(db.collection('hist').onSnapshot(x=>{const h={};x.docs.forEach(d=>h[d.id]=d.data());S.hist=h;done('hist');dataChanged()},e=>{done('hist');dbErr(e)}));
   unsubs.push(db.collection('tx').onSnapshot(x=>{S.tx=x.docs.map(d=>({...d.data(),_id:d.id}));done('tx');dataChanged()},e=>{done('tx');dbErr(e)}));
   unsubs.push(db.collection('pend').onSnapshot(x=>{S.pend=x.docs.map(d=>({...d.data(),_id:d.id}));render();maybeHash()},()=>{}));
-  unsubs.push(db.collection('fin').onSnapshot(x=>{const o={};x.docs.forEach(d=>o[d.id]=d.data());S.fin.meses=o;render()},()=>{}));
-  unsubs.push(db.doc('cfg/fin').onSnapshot(x=>{S.fin.cfg=x.exists?x.data():null;render()},()=>{}));
+  for(const w of FIN_WS){
+    unsubs.push(db.collection(finColW(w)).onSnapshot(x=>{const o={};x.docs.forEach(d=>o[d.id]=d.data());S.fins[w].meses=o;render()},()=>{}));
+    unsubs.push(db.doc(finCfgW(w)).onSnapshot(x=>{S.fins[w].cfg=x.exists?x.data():null;render()},()=>{}));
+  }
   unsubs.push(db.collection('alu').onSnapshot(x=>{const o={};x.docs.forEach(d=>o[d.id]=d.data());S.alu.meses=o;render()},()=>{}));
   unsubs.push(db.doc('cfg/alu').onSnapshot(x=>{S.alu.cfg=x.exists?x.data():null;render()},()=>{}));
   unsubs.push(db.doc('cfg/main').onSnapshot(x=>{S.cfg=x.exists?x.data():null;dataChanged()},()=>{}));
@@ -377,9 +383,10 @@ async function login(ev){
 async function logout(){try{lsSet('cc_me',null);await S.auth.au.signOut(S.auth.auth)}catch(e){}}
 async function importarHist(file){
   let data;try{data=JSON.parse(await file.text())}catch(e){toast('Arquivo inválido.');return}
-  if(data&&(data.fin||data.alu)){let n=0;const tot=(data.fin?Object.keys(data.fin.meses).length+1:0)+(data.alu?Object.keys(data.alu.meses).length+1:0);
+  if(data&&(data.fin||data.alu||data.finAlex)){let n=0;const tot=(data.fin?Object.keys(data.fin.meses).length+1:0)+(data.finAlex?Object.keys(data.finAlex.meses).length+1:0)+(data.alu?Object.keys(data.alu.meses).length+1:0);
     try{
       if(data.fin){await S.db.doc('cfg/fin').set(data.fin.cfg);n++;for(const [m,d] of Object.entries(data.fin.meses)){await S.db.doc('fin/'+m).set(d);n++;toast('Importando… '+n+'/'+tot)}}
+      if(data.finAlex){await S.db.doc('cfg/fin_alex').set(data.finAlex.cfg);n++;for(const [m,d] of Object.entries(data.finAlex.meses)){await S.db.doc('fin_alex/'+m).set(d);n++;toast('Importando… '+n+'/'+tot)}}
       if(data.alu){await S.db.doc('cfg/alu').set(data.alu.cfg);n++;for(const [k,d] of Object.entries(data.alu.meses)){await S.db.doc('alu/'+k).set(d);n++;toast('Importando… '+n+'/'+tot)}}
       toast('Finanças e aluguéis importados ✓');
     }catch(e){dbErr(e)}
@@ -439,7 +446,7 @@ function render(){
   if(S.tab==='mes')v.innerHTML=viewMes();
   else if(S.tab==='analise')v.innerHTML=viewAnalise();
   else if(S.tab==='fin')v.innerHTML=viewFin();
-  else if(S.tab==='fincfg')v.innerHTML=viewFinCfg();
+  else if(S.tab==='fincfg'){setW(S.fw==='all'?'dai':S.fw);v.innerHTML=viewFinCfg()}
   else if(S.tab==='alu')v.innerHTML=viewAlu();
   else if(S.tab==='alucfg')v.innerHTML=viewAluCfg();
   else if(S.tab==='lugares'){v.innerHTML=viewLugares();const q=document.getElementById('lq');if(q){q.oninput=()=>{S.lq=q.value;const pos=q.selectionStart;render();const n=document.getElementById('lq');n.focus();try{n.setSelectionRange(pos,pos)}catch(e){}}}}
@@ -865,6 +872,10 @@ function askMe(){
 }
 
 /* ===================== FINANÇAS (receitas, compromissos, empréstimos) ===================== */
+const FIN_WS=['dai','alex'];const FIN_NOME={dai:'Dai',alex:'Alex'};
+function finColW(w){return w==='dai'?'fin':'fin_'+w}
+function finCfgW(w){return w==='dai'?'cfg/fin':'cfg/fin_'+w}
+function setW(w){S.fin=S.fins[w]}
 const FIN_TIPOS=['Empréstimo','Financiamento','Cartão','Banco','Moradia','Contas','Diversos'];
 const FIN_EMO={'Empréstimo':'🏦','Financiamento':'🏦','Cartão':'💳','Banco':'🏛️','Moradia':'🏠','Contas':'🧾','Diversos':'🛍️'};
 function fcfg(){return S.fin.cfg||{titulo:'Finanças',inicio:ym(new Date()),saldoInicial:0,fontes:[],itens:[]}}
@@ -872,20 +883,51 @@ function inRange(m,de,ate){return (!de||m>=de)&&(!ate||m<=ate)}
 function fRec(m,f){const d=S.fin.meses[m];if(d&&d.rec&&d.rec[f.id]!=null)return +d.rec[f.id];return (+f.padrao&&inRange(m,f.de,f.ate))?+f.padrao:0}
 function fComp(m,i){const d=S.fin.meses[m];const c=d&&d.comp&&d.comp[i.id];if(c&&c.v!=null)return {v:+c.v,ok:!!c.ok,prev:false};return {v:(+i.padrao&&inRange(m,i.de,i.ate))?+i.padrao:0,ok:false,prev:true}}
 function finMes(m){const c=fcfg();let rec=0,comp=0,pago=0;for(const f of c.fontes)rec+=fRec(m,f);for(const i of c.itens){const x=fComp(m,i);comp+=x.v;if(x.ok)pago+=x.v}return{rec,comp,pago,aberto:comp-pago}}
-function finSaldos(ate){const c=fcfg();const out={};let s=+c.saldoInicial||0;let m=c.inicio||ym(new Date());let k=0;while(m<=ate&&k++<360){const r=finMes(m);const ini=s;s=s+r.rec-r.comp;out[m]={ini,fim:s,...r};m=addMes(m,1)}return out}
+function finSaldos(ate){const c=fcfg();const ac=c.acumula!==false;const out={};let s=+c.saldoInicial||0;let m=c.inicio||ym(new Date());let k=0;while(m<=ate&&k++<360){const r=finMes(m);const ini=ac?s:0;s=ini+r.rec-r.comp;out[m]={ini,fim:s,...r,ac};m=addMes(m,1)}return out}
 function finHorizonte(){let h=addMes(ym(new Date()),36);for(const k of Object.keys(S.fin.meses))if(k>h)h=k;for(const i of fcfg().itens)if(i.ate&&i.ate>h)h=i.ate;return h}
+function finChips(){const w=S.fw;return `<div class="seg" style="margin-bottom:12px;grid-template-columns:1fr 1fr 1fr">${[['dai','Dai'],['alex','Alex'],['all','Juntos']].map(([k,t])=>`<button class="${w===k?'on':''}" data-act="fw" data-w="${k}">${t}</button>`).join('')}</div>`}
 function viewFin(){
+  if(!S.fw)S.fw=(S.me==='Alex'?'alex':'dai');
+  if(S.fw==='all')return viewFinAll();
+  setW(S.fw);return finChips()+viewFinW();
+}
+function viewFinAll(){
+  const m=S.fmes||(S.fmes=ym(new Date()));let h=finChips()+`<div class="mnav"><button data-act="fprev">‹</button><b>${mesLabel(m)}</b><button data-act="fnext">›</button></div>`;
+  const por={};let fim=0,rec=0,comp=0,pago=0;const fut=[];const proj=Array(12).fill(0);
+  for(const w of FIN_WS){setW(w);if(!S.fin.cfg&&!Object.keys(S.fin.meses).length){por[w]=null;continue}
+    const H=finHorizonte();const sal=finSaldos(H>addMes(m,12)?H:addMes(m,12));const r=sal[m]||{ini:0,fim:0,ac:fcfg().acumula!==false,...finMes(m)};por[w]=r;
+    fim+=r.fim;rec+=r.rec;comp+=r.comp;pago+=r.pago;for(let k=0;k<12;k++){const x=sal[addMes(m,k)];proj[k]+=x?x.fim:0}
+    const meses=[];let m2=m;while(m2<=H){meses.push(m2);m2=addMes(m2,1)}
+    for(const i of fcfg().itens){let rest=0,n=0,ult=null;for(const mm of meses){const x=fComp(mm,i);if(x.v>0&&!x.ok){rest+=x.v;n++;ult=mm}}if(rest>0)fut.push({w,i,rest,n,ult})}}
+  setW(S.fw==='all'?'dai':S.fw);
+  h+=`<div class="card hero"><div class="lbl">Dai + Alex · ${Object.values(por).some(r=>r&&!r.ac)?'resultado':'saldo'} ao fim do mês</div><div class="big" style="color:${fim<0?'var(--bad)':'inherit'}">${brl(fim)}</div>
+   <div class="split">${FIN_WS.map(w=>{const r=por[w];return `<button class="who" data-act="fw" data-w="${w}" style="text-align:left;font:inherit"><div class="n"><i style="background:${cor(FIN_NOME[w])}"></i>${FIN_NOME[w]}</div>${r?`<div class="row"><span>${r.ac?'Saldo':'Resultado'}</span><span style="color:${r.fim<0?'var(--bad)':'inherit'}">${brl(r.fim)}</span></div><div class="row"><span>Receitas</span><span>${brl(r.rec)}</span></div><div class="row"><span>Compr.</span><span>${brl(r.comp)}</span></div>`:'<div class="row"><span>sem dados</span><span></span></div>'}</button>`}).join('')}</div>
+   <div class="who" style="margin-top:10px;background:#faf9f6"><div class="row"><span>Receitas juntas</span><span style="color:#1f6b45">${brl(rec)}</span></div><div class="row"><span>Compromissos juntos</span><span style="color:var(--bad)">${brl(comp)}</span></div><div class="row"><span>Já pago</span><span>${brl(pago)}</span></div><div class="row"><span>Em aberto</span><span>${brl(comp-pago)}</span></div></div></div>`;
+  fut.sort((a,b)=>b.rest-a.rest);const tot=fut.reduce((a,x)=>a+x.rest,0);const totW=w=>fut.filter(x=>x.w===w).reduce((a,x)=>a+x.rest,0);
+  h+=`<div class="sec"><h2>Dívidas e parcelas a pagar</h2><span>${brl(tot)}</span></div><div class="card"><div class="hint" style="margin-bottom:6px">Dai: <b>${brl(totW('dai'))}</b> · Alex: <b>${brl(totW('alex'))}</b></div>`+(fut.length?fut.map(x=>`<div style="display:flex;justify-content:space-between;gap:10px;padding:8px 0;border-top:1px solid #f2f0ea"><div><b><span class="dot" style="background:${cor(FIN_NOME[x.w])}"></span>${esc(x.i.nome)}</b><br><small style="color:var(--ink2)">${FIN_NOME[x.w]} · ${x.n} ${x.n>1?'parcelas':'parcela'} · até ${mesLabel(x.ult)}</small></div><b style="white-space:nowrap">${brl(x.rest)}</b></div>`).join(''):'<div class="empty">Nenhuma dívida futura.</div>')+`</div>`;
+  const pm=[];for(let k=0;k<12;k++)pm.push(addMes(m,k));
+  h+=projChart(pm,proj,'Dai + Alex · próximos 12 meses');
+  return h;
+}
+function projChart(pm,vals,titulo){
+  const W=340,Hh=170,pb=22,bw=W/12,mn=Math.min(0,...vals),top=Math.max(0,...vals);const rng=(top-mn)||1;const y0=10+(top/rng)*(Hh-pb-10);
+  return `<div class="card chart" style="margin-top:12px"><div style="font-weight:800">Projeção · ${esc(titulo)}</div><div class="hint">Com base nas receitas e compromissos já lançados ou previstos.</div>
+  <svg viewBox="0 0 ${W} ${Hh}" role="img" aria-label="Projeção do saldo"><line x1="0" x2="${W}" y1="${y0}" y2="${y0}" stroke="#cfcac0"/>
+  ${vals.map((v,k)=>{const bh=Math.abs(v)/rng*(Hh-pb-10);const x=k*bw+bw*.2,w=bw*.6;const y=v>=0?y0-bh:y0;return `<g data-act="bar" data-l="${mesLabel(pm[k])}" data-v="${v}"><rect x="${k*bw}" y="0" width="${bw}" height="${Hh}" fill="transparent"/><rect x="${x}" y="${y}" width="${w}" height="${Math.max(bh,1)}" rx="3" fill="${v<0?'#d9776b':k===0?'#1f5f4a':'#9fbfb2'}"/><text x="${k*bw+bw/2}" y="${Hh-6}" text-anchor="middle" font-size="10" fill="#8f938b" font-family="Manrope">${MESES[+pm[k].slice(5)-1].slice(0,3)}</text></g>`}).join('')}
+  </svg><div class="tip" id="tip">Toque numa barra para ver o valor.</div></div>`;
+}
+function viewFinW(){
   const c=fcfg();const m=S.fmes||(S.fmes=ym(new Date()));
   if(!S.fin.cfg&&!Object.keys(S.fin.meses).length){
     return `<div class="card set" style="margin-top:20px"><h4>💰 Finanças</h4><p>Controle de receitas, empréstimos, cartões e demais compromissos, com o saldo passando de um mês para o outro.</p>
-    <p>Para trazer os dados da aba <b>Controle Dívidas</b> da planilha, vá em <b>Ajustes → Histórico da planilha → Importar</b> e escolha <b>financas-e-alugueis.json</b>.</p>
+    <p>Ainda não há dados de <b>${FIN_NOME[S.fw]}</b>. Para trazer os dados da aba <b>Controle Dívidas</b> da planilha, vá em <b>Ajustes → Histórico da planilha → Importar</b> e escolha <b>financas-e-alugueis.json</b>.</p>
     <button class="btn sm" data-act="finicio">Começar do zero</button></div>`}
   const H=finHorizonte();const sal=finSaldos(H>addMes(m,12)?H:addMes(m,12));
   const r=sal[m]||{ini:0,fim:0,...finMes(m)};const antes=m<(c.inicio||m);
   const doc=S.fin.meses[m]||{};
   let h=`<div class="mnav"><button data-act="fprev">‹</button><b>${mesLabel(m)}</b><button data-act="fnext">›</button></div>`;
-  h+=`<div class="card hero"><div class="lbl">${esc(c.titulo||'Finanças')} · saldo ao fim do mês</div><div class="big" style="color:${r.fim<0?'var(--bad)':'inherit'}">${antes?'—':brl(r.fim)}</div>
-   <div class="who" style="background:#faf9f6"><div class="row"><span>Saldo anterior</span><span>${brl(r.ini)}</span></div><div class="row"><span>+ Receitas</span><span style="color:#1f6b45">${brl(r.rec)}</span></div><div class="row"><span>− Compromissos</span><span style="color:var(--bad)">${brl(r.comp)}</span></div></div>
+  h+=`<div class="card hero"><div class="lbl">${esc(c.titulo||'Finanças')} · ${r.ac===false?'resultado do mês':'saldo ao fim do mês'}</div><div class="big" style="color:${r.fim<0?'var(--bad)':'inherit'}">${antes?'—':brl(r.fim)}</div>
+   <div class="who" style="background:#faf9f6">${r.ac===false?'':`<div class="row"><span>Saldo anterior</span><span>${brl(r.ini)}</span></div>`}<div class="row"><span>+ Receitas</span><span style="color:#1f6b45">${brl(r.rec)}</span></div><div class="row"><span>− Compromissos</span><span style="color:var(--bad)">${brl(r.comp)}</span></div></div>
    <div class="split" style="margin-top:10px"><div class="who"><div class="n">✓ Pago</div><div class="row"><span></span><span>${brl(r.pago)}</span></div></div><div class="who"><div class="n">⏳ Em aberto</div><div class="row"><span></span><span>${brl(r.aberto)}</span></div></div></div>
    <div class="hint" style="margin-top:10px">${doc.obs?'📝 '+esc(doc.obs)+' · ':''}<a href="#" data-act="fobs" style="color:var(--acc);font-weight:700">${doc.obs?'editar anotação':'+ anotação do mês'}</a></div></div>`;
   // receitas
@@ -907,13 +949,7 @@ function viewFin(){
   for(const i of c.itens){let rest=0,n=0,ult=null;for(const mm of meses){const x=fComp(mm,i);if(x.v>0&&!x.ok){rest+=x.v;n++;ult=mm}}if(rest>0)fut.push({i,rest,n,ult})}
   fut.sort((a,b)=>b.rest-a.rest);const totFut=fut.reduce((a,x)=>a+x.rest,0);
   h+=`<div class="sec"><h2>Dívidas e parcelas a pagar</h2><span>a partir deste mês</span></div><div class="card">`+(fut.length?`<div class="hint" style="margin-bottom:6px">Total ainda a pagar: <b>${brl(totFut)}</b></div>`+fut.map(x=>`<div style="display:flex;justify-content:space-between;gap:10px;padding:8px 0;border-top:1px solid #f2f0ea"><div><b>${FIN_EMO[x.i.tipo]||'•'} ${esc(x.i.nome)}</b><br><small style="color:var(--ink2)">${x.n} ${x.n>1?'parcelas':'parcela'} · termina em ${mesLabel(x.ult)}</small></div><b style="white-space:nowrap">${brl(x.rest)}</b></div>`).join(''):'<div class="empty">Nenhuma dívida futura lançada.</div>')+`</div>`;
-  // projeção do saldo
-  const pm=[];for(let k=0;k<12;k++)pm.push(addMes(m,k));const vals=pm.map(x=>sal[x]?sal[x].fim:0);
-  const W=340,Hh=170,pb=22,bw=W/12,mx=Math.max(1,...vals.map(Math.abs)),mn=Math.min(0,...vals),top=Math.max(0,...vals);const rng=(top-mn)||1;const y0=10+(top/rng)*(Hh-pb-10);
-  h+=`<div class="card chart" style="margin-top:12px"><div style="font-weight:800">Projeção do saldo · próximos 12 meses</div><div class="hint">Com base nas receitas e compromissos já lançados ou previstos.</div>
-  <svg viewBox="0 0 ${W} ${Hh}" role="img" aria-label="Projeção do saldo"><line x1="0" x2="${W}" y1="${y0}" y2="${y0}" stroke="#cfcac0"/>
-  ${vals.map((v,k)=>{const bh=Math.abs(v)/rng*(Hh-pb-10);const x=k*bw+bw*.2,w=bw*.6;const y=v>=0?y0-bh:y0;return `<g data-act="bar" data-l="${mesLabel(pm[k])}" data-v="${v}"><rect x="${k*bw}" y="0" width="${bw}" height="${Hh}" fill="transparent"/><rect x="${x}" y="${y}" width="${w}" height="${Math.max(bh,1)}" rx="3" fill="${v<0?'#d9776b':k===0?'#1f5f4a':'#9fbfb2'}"/><text x="${k*bw+bw/2}" y="${Hh-6}" text-anchor="middle" font-size="10" fill="#8f938b" font-family="Manrope">${MESES[+pm[k].slice(5)-1].slice(0,3)}</text></g>`}).join('')}
-  </svg><div class="tip" id="tip">Toque numa barra para ver o saldo.</div></div>`;
+  const pm=[];for(let k=0;k<12;k++)pm.push(addMes(m,k));h+=projChart(pm,pm.map(x=>sal[x]?sal[x].fim:0),c.acumula===false?'resultado de cada mês':'saldo');
   h+=`<button class="btn light" data-act="fcfg" style="width:100%;margin-top:12px">⚙️ Configurar receitas e compromissos</button>`;
   return h;
 }
@@ -933,23 +969,25 @@ async function salvarFinVal(){
   const ok=kind==='comp'&&document.getElementById('fvok').checked;const rep=Math.min(120,Math.max(0,parseInt(document.getElementById('fvrep').value)||0));
   try{for(let k=0;k<=rep;k++){const m=addMes(S.fmes,k);const d=JSON.parse(JSON.stringify(S.fin.meses[m]||{}));
     if(kind==='rec'){d.rec=d.rec||{};d.rec[id]=val}else{d.comp=d.comp||{};d.comp[id]={v:val,ok:k===0?ok:false}}
-    await S.db.doc('fin/'+m).set(d);S.fin.meses[m]=d}
+    await S.db.doc(finColW(S.fw)+'/'+m).set(d);S.fin.meses[m]=d}
     closeSheet();toast('Salvo ✓');render()}catch(e){dbErr(e)}
 }
 async function toggleFinOk(id){const m=S.fmes;const it=fcfg().itens.find(x=>x.id===id);if(!it)return;const x=fComp(m,it);if(!x.v)return;
   const d=JSON.parse(JSON.stringify(S.fin.meses[m]||{}));d.comp=d.comp||{};d.comp[id]={v:x.v,ok:!x.ok};S.fin.meses[m]=d;render();
-  try{await S.db.doc('fin/'+m).set(d)}catch(e){dbErr(e)}}
+  try{await S.db.doc(finColW(S.fw)+'/'+m).set(d)}catch(e){dbErr(e)}}
 function abrirFinObs(){const d=S.fin.meses[S.fmes]||{};const sh=document.getElementById('sheet');
   sh.innerHTML=`<div class="grab"></div><h3>Anotação · ${mesLabel(S.fmes)}<button class="btn light sm" data-act="close">Fechar</button></h3><textarea class="inp" id="fobs" rows="4" placeholder="Ex.: Alex emprestou 750">${esc(d.obs||'')}</textarea><div class="actions"><button class="btn" data-act="fobssave">Salvar</button></div>`;
   document.getElementById('scrim').classList.add('on');sh.classList.add('on')}
 async function salvarFinObs(){const d=JSON.parse(JSON.stringify(S.fin.meses[S.fmes]||{}));const t=document.getElementById('fobs').value.trim();if(t)d.obs=t;else delete d.obs;
-  try{await S.db.doc('fin/'+S.fmes).set(d);S.fin.meses[S.fmes]=d;closeSheet();render()}catch(e){dbErr(e)}}
+  try{await S.db.doc(finColW(S.fw)+'/'+S.fmes).set(d);S.fin.meses[S.fmes]=d;closeSheet();render()}catch(e){dbErr(e)}}
 function viewFinCfg(){
   const c=S.finDraft||JSON.parse(JSON.stringify(fcfg()));
   const mi=(cls,k,v,ph,extra='')=>`<input class="inp ${cls}" data-k="${k}" value="${esc(v??'')}" placeholder="${ph}" ${extra} style="padding:9px 8px;min-width:0">`;
-  return `<div class="mnav"><button data-act="tab" data-t="fin">‹</button><b style="font-size:20px">Configurar finanças</b><span style="width:40px"></span></div>
+  return `<div class="mnav"><button data-act="tab" data-t="fin">‹</button><b style="font-size:20px">Finanças · ${FIN_NOME[S.fw]}</b><span style="width:40px"></span></div>
   <div class="card set"><h4>Geral</h4><div class="fld"><label>Título</label><input class="inp" id="fct" value="${esc(c.titulo||'')}"></div>
-   <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px"><div class="fld"><label>Começa em</label><input class="inp" type="month" id="fci" value="${c.inicio||''}" style="min-width:0"></div><div class="fld"><label>Saldo inicial</label><input class="inp" id="fcs" inputmode="decimal" value="${String(c.saldoInicial||0).replace('.',',')}"></div></div></div>
+   <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px"><div class="fld"><label>Começa em</label><input class="inp" type="month" id="fci" value="${c.inicio||''}" style="min-width:0"></div><div class="fld"><label>Saldo inicial</label><input class="inp" id="fcs" inputmode="decimal" value="${String(c.saldoInicial||0).replace('.',',')}"></div></div>
+   <label style="display:flex;gap:10px;align-items:center;font-weight:600;margin-top:10px"><input type="checkbox" id="fca" ${c.acumula!==false?'checked':''} style="width:20px;height:20px;accent-color:var(--acc)"> Somar o saldo do mês anterior (saldo acumulado)</label>
+   <p>Desmarcado, cada mês mostra só receitas − compromissos (como estava na planilha do Alex).</p></div>
   <div class="card set"><h4>Fontes de receita</h4><p>Valor padrão (opcional) entra automaticamente entre os meses "de" e "até".</p>
    ${c.fontes.map((f,i)=>`<div class="fcf" data-i="${i}" data-id="${esc(f.id)}" style="display:grid;grid-template-columns:1fr 1fr 34px;gap:6px;padding:8px 0;border-top:${i?'1px solid #f2f0ea':'0'}">${mi('','nome',f.nome,'Nome')}${mi('','padrao',f.padrao?String(f.padrao).replace('.',','):'','Valor padrão','inputmode="decimal"')}<button class="btn bad sm" data-act="fcfgdel" data-k="fontes" data-i="${i}" style="padding:8px 0">✕</button>${mi('','de',f.de,'','type="month"')}${mi('','ate',f.ate,'','type="month"')}</div>`).join('')}
    <button class="btn light sm" data-act="fcfgadd" data-k="fontes" style="margin-top:8px">+ Receita</button></div>
@@ -962,12 +1000,12 @@ function viewFinCfg(){
 function readFinCfg(){
   const g=(r,k)=>{const e=r.querySelector(`[data-k=${k}]`);return e?e.value.trim():''};const num=x=>{const v=parseVal(x);return isNaN(v)?undefined:v};
   const clean=o=>{for(const k in o)if(o[k]===undefined||o[k]==='')delete o[k];return o};
-  return {titulo:(document.getElementById('fct')||{}).value||'',inicio:(document.getElementById('fci')||{}).value||ym(new Date()),saldoInicial:num((document.getElementById('fcs')||{}).value)||0,
+  return {acumula:!!(document.getElementById('fca')||{}).checked,titulo:(document.getElementById('fct')||{}).value||'',inicio:(document.getElementById('fci')||{}).value||ym(new Date()),saldoInicial:num((document.getElementById('fcs')||{}).value)||0,
     fontes:[...document.querySelectorAll('.fcf')].map(r=>clean({id:r.dataset.id,nome:g(r,'nome'),padrao:num(g(r,'padrao')),de:g(r,'de'),ate:g(r,'ate')})),
     itens:[...document.querySelectorAll('.fci')].map(r=>clean({id:r.dataset.id,nome:g(r,'nome'),tipo:g(r,'tipo'),padrao:num(g(r,'padrao')),dia:parseInt(g(r,'dia'))||undefined,de:g(r,'de'),ate:g(r,'ate')}))};
 }
 async function salvarFinCfg(){const c=readFinCfg();c.fontes=c.fontes.filter(f=>f.nome);c.itens=c.itens.filter(i=>i.nome);
-  try{await S.db.doc('cfg/fin').set(c);S.finDraft=null;S.tab='fin';toast('Configuração salva ✓');render()}catch(e){dbErr(e)}}
+  try{await S.db.doc(finCfgW(S.fw)).set(c);S.finDraft=null;S.tab='fin';toast('Configuração salva ✓');render()}catch(e){dbErr(e)}}
 
 /* ===================== ALUGUÉIS ===================== */
 function acfg(){return S.alu.cfg||{imoveis:[]}}
@@ -1100,6 +1138,7 @@ document.addEventListener('click',async ev=>{
     case 'catdel':{const l=readCats();S.catDraft=l;abrirExcluirCat(+b.dataset.i);break}
     case 'catdelok':confirmarExcluirCat();break;
     case 'catsave':salvarCats();break;
+    case 'fw':S.fw=b.dataset.w;S.fall=false;render();window.scrollTo(0,0);break;
     case 'fprev':S.fmes=addMes(S.fmes,-1);render();break;
     case 'fnext':S.fmes=addMes(S.fmes,1);render();break;
     case 'fval':abrirFinVal(b.dataset.k,b.dataset.id);break;
@@ -1112,7 +1151,7 @@ document.addEventListener('click',async ev=>{
     case 'fcfgadd':{const d=readFinCfg();d[b.dataset.k].push(b.dataset.k==='fontes'?{id:'f'+Date.now(),nome:''}:{id:'i'+Date.now(),nome:'',tipo:'Cartão'});S.finDraft=d;render();break}
     case 'fcfgdel':{const d=readFinCfg();d[b.dataset.k].splice(+b.dataset.i,1);S.finDraft=d;render();break}
     case 'fcfgsave':salvarFinCfg();break;
-    case 'finicio':{await S.db.doc('cfg/fin').set({titulo:'Finanças da casa',inicio:ym(new Date()),saldoInicial:0,fontes:[],itens:[]});S.tab='fincfg';render();break}
+    case 'finicio':{await S.db.doc(finCfgW(S.fw)).set({titulo:'Finanças '+(S.fw==='dai'?'da Dai':'do Alex'),inicio:ym(new Date()),saldoInicial:0,acumula:true,fontes:[],itens:[]});S.tab='fincfg';render();break}
     case 'aim':S.aim=b.dataset.id;S.amesA=null;render();break;
     case 'ames':S.amesA=b.dataset.m;render();window.scrollTo({top:0,behavior:'smooth'});break;
     case 'aprev':S.amesA=addMes(S.amesA,-1);render();break;
