@@ -94,6 +94,7 @@ input,select,textarea{font-size:16px}
 .tabs button span{font-size:20px;filter:grayscale(1);opacity:.6}
 .tabs button.on{color:var(--acc)}
 .tabs button.on span{filter:none;opacity:1}
+.acb{position:absolute;top:-2px;left:50%;margin-left:4px;font-size:9.5px;font-weight:800;color:#fff;border-radius:99px;padding:1px 5px;white-space:nowrap;line-height:1.4}
 .empty{color:var(--mute);text-align:center;padding:28px 10px;font-size:14px}
 .note{font-size:12.5px;color:var(--ink2);background:#fff6e5;border-radius:12px;padding:10px 12px;margin-bottom:12px}
 /* sheet */
@@ -157,6 +158,7 @@ input[type=range]{width:100%;accent-color:var(--acc)}
   <button data-tab="analise"><span>📊</span>Análise</button>
   <button data-tab="fin"><span>💰</span>Finanças</button>
   <button data-tab="alu"><span>🔑</span>Aluguéis</button>
+  <button data-tab="acertos" id="tabAc" style="position:relative"><span>🔁</span>Acertos<b id="acBadge" class="acb" style="display:none"></b></button>
   <button data-tab="ajustes"><span>⚙️</span>Ajustes</button>
 </nav>
 <div class="scrim" id="scrim"></div>
@@ -441,7 +443,8 @@ window.addEventListener('hashchange',maybeHash);
 function render(){
   const meBtn=document.getElementById('meBtn');
   meBtn.innerHTML=S.me?`<i style="background:${cor(S.me)}"></i>${esc(S.me)}`:'<i style="background:#ccc"></i>Quem é você?';
-  document.querySelectorAll('.tabs button').forEach(b=>b.classList.toggle('on',b.dataset.tab===S.tab||(S.tab==='busca'&&b.dataset.tab==='mes')||(S.tab==='acertos'&&b.dataset.tab==='analise')||(S.tab==='fincfg'&&b.dataset.tab==='fin')||(S.tab==='alucfg'&&b.dataset.tab==='alu')||(S.tab==='lugares'&&b.dataset.tab==='ajustes')));
+  document.querySelectorAll('.tabs button').forEach(b=>b.classList.toggle('on',b.dataset.tab===S.tab||(S.tab==='busca'&&b.dataset.tab==='mes')||(S.tab==='fincfg'&&b.dataset.tab==='fin')||(S.tab==='alucfg'&&b.dataset.tab==='alu')||(S.tab==='lugares'&&b.dataset.tab==='ajustes')));
+  atualizaBadgeAc();
   document.getElementById('fab').style.display=(S.tab==='mes'||S.tab==='analise')?'':'none';
   const v=document.getElementById('view');
   const nav=document.querySelector('.tabs');const fab=document.getElementById('fab');
@@ -485,7 +488,8 @@ function viewMes(){
   const deve=r.saldoDai>0.005?'Alex':r.saldoDai<-0.005?'Dai':null;
   const sm=S.me?saldoMesCasa(S.mes,S.me==='Dai'?r.pDai:r.pAlex,S.me):null;
   h+=`<div class="card hero"><div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px"><div style="min-width:0"><div class="lbl">Gastos da casa no mês</div><div class="big">${brl(r.tot)}</div></div>
-  ${sm?`<button data-act="gofin" title="${esc(sm.dica)}" style="all:unset;cursor:pointer;text-align:right;flex:0 0 auto;padding-top:2px"><div style="font-size:22px;line-height:1">${sm.emo}</div><div style="font-size:11px;color:var(--ink2);font-weight:600;margin-top:4px">${esc(S.me)}: receita ${brl0(sm.rec)}</div><div style="font-size:11px;color:var(--ink2);font-weight:600">− pagou no mês ${brl0(sm.gasto)}</div>${sm.fin?`<div style="font-size:11px;color:var(--ink2);font-weight:600">− empréstimos etc. ${brl0(sm.fin)}</div>`:''}<div style="font-size:13px;font-weight:800;color:${sm.cor};white-space:nowrap">saldo ${sm.saldo<0?'−':''}${brl0(Math.abs(sm.saldo))}</div><div style="font-size:10.5px;color:var(--mute);font-weight:600">${sm.saldo<0?'acima da receita':pct(sm.marg)+' de folga'}</div></button>`:''}</div>
+  ${sm?`<div style="text-align:right;flex:0 0 auto;padding-top:2px"><button data-act="smtoggle" title="${esc(sm.dica)}" aria-expanded="${S.smOpen?'true':'false'}" style="all:unset;cursor:pointer;display:inline-flex;align-items:center;gap:6px"><span style="font-size:13px;font-weight:800;color:${sm.cor};white-space:nowrap">${sm.saldo<0?'−':''}${brl0(Math.abs(sm.saldo))}</span><span style="font-size:22px;line-height:1">${sm.emo}</span></button><div style="font-size:10.5px;color:var(--mute);font-weight:700;margin-top:2px">${sm.saldo<0?'acima da receita':pct(sm.marg)+' de folga'}</div>
+  ${S.smOpen?`<div style="font-size:11px;color:var(--ink2);font-weight:600;margin-top:6px;line-height:1.5">${esc(S.me)}: receita ${brl0(sm.rec)}<br>− pagou no mês ${brl0(sm.gasto)}${sm.fin?`<br>− empréstimos etc. ${brl0(sm.fin)}`:''}<br><a href="#" data-act="gofin" style="color:var(--acc);font-weight:700">abrir Finanças ›</a></div>`:''}</div>`:''}</div>
   <div class="split">
    ${['Dai','Alex'].map(p=>`<div class="who"><div class="n"><i style="background:${cor(p)}"></i>${p}</div>
      <div class="row"><span>Cota</span><span>${brl(p==='Dai'?r.cDai:r.cAlex)}</span></div>
@@ -529,7 +533,7 @@ function viewMes(){
   h+=`<div style="display:flex;gap:8px;margin-top:14px"><button class="btn light sm" data-act="copy" style="flex:1">📋 Copiar mês p/ planilha</button></div>`;
   return h;
 }
-function segAn(){const m=S.tab==='acertos'?'ac':(S.amode||'mes');return `<div class="seg" style="margin-bottom:12px;grid-template-columns:1fr 1fr 1fr 1fr">${[['mes','Mês'],['ano','Ano'],['per','Período'],['ac','Acertos']].map(([k,t])=>`<button class="${m===k?'on':''}" ${k==='ac'?'data-act="goacertos"':`data-act="amode" data-m="${k}"`} style="padding:10px 4px">${t}</button>`).join('')}</div>`}
+function segAn(){const m=S.tab==='acertos'?'ac':(S.amode||'mes');return S.tab==='acertos'?'':`<div class="seg" style="margin-bottom:12px;grid-template-columns:1fr 1fr 1fr">${[['mes','Mês'],['ano','Ano'],['per','Período']].map(([k,t])=>`<button class="${m===k?'on':''}" ${k==='ac'?'data-act="goacertos"':`data-act="amode" data-m="${k}"`} style="padding:10px 4px">${t}</button>`).join('')}</div>`}
 function mesesEntre(de,ate){const out=[];if(!de||!ate)return out;if(de>ate)[de,ate]=[ate,de];let m=de,k=0;while(m<=ate&&k++<120){out.push(m);m=addMes(m,1)}return out}
 function periodoAtual(){
   const P=S.per||(S.per={tipo:'s',ano:ym(new Date()).slice(0,4),sem:new Date().getMonth()<6?1:2});const hoje=ym(new Date());
@@ -805,6 +809,13 @@ function viewBusca(){
   if(open)h+='</div>';
   return h;
 }
+function atualizaBadgeAc(){const el=document.getElementById('acBadge');if(!el)return;
+  if(!S.loaded.tx||S.needLogin||!Object.keys(S.hist).length&&!S.tx.length){el.style.display='none';return}
+  let q;try{q=quadroAcertos()}catch(e){el.style.display='none';return}const a=q.acum;
+  if(Math.abs(a)<1){el.style.display='';el.textContent='✓';el.style.background='#1f6b45';return}
+  const k=Math.abs(a)>=1000?(Math.abs(a)/1000).toFixed(1).replace('.',',')+'k':Math.round(Math.abs(a))+'';
+  el.style.display='';el.textContent=(a<0?'D ':'A ')+k;el.style.background=a<0?'#e0663f':'#3a6ad6';
+  el.parentElement.title=(a<0?'Dai deve ':'Alex deve ')+brl(Math.abs(a))+(a<0?' para Alex':' para Dai')}
 function quadroAcertos(){
   const all=entries();const inicio=(S.cfg&&S.cfg.acertoInicio)||'2025-01';
   let fim=ym(new Date());for(const e of all)if(e.mes>fim)fim=e.mes;
@@ -817,10 +828,11 @@ function quadroAcertos(){
 function fmtSaldo(v,curto){if(Math.abs(v)<0.005)return '<span style="color:var(--mute)">—</span>';const a=v>0?'Alex→Dai':'Dai→Alex';const c=v>0?'var(--dai)':'var(--alex)';
   return `<span style="white-space:nowrap"><b>${curto?brl0(Math.abs(v)):brl(Math.abs(v))}</b> <small style="color:${c};font-weight:700">${a}</small></span>`}
 function viewAcertos(){
-  const q=quadroAcertos();const a=q.acum;let h=segAn();
+  const q=quadroAcertos();const a=q.acum;let h=`<div class="mnav"><span style="width:40px"></span><b style="font-size:22px">Acertos Dai × Alex</b><span style="width:40px"></span></div>`;
   const quem=a>0.005?'Alex':a<-0.005?'Dai':null;
   h+=`<div class="card hero"><div class="lbl">Saldo acumulado entre vocês · desde ${mesLabel(q.inicio)}</div>
    <div class="big" style="font-size:28px">${quem?`${quem} deve ${brl(Math.abs(a))}`:'Tudo acertado ✓'}</div>${quem?`<div class="hint" style="margin-top:-6px">para ${outro(quem)}</div>`:''}
+   ${(()=>{const y=ym(new Date()).slice(0,4);const ls=q.linhas.filter(l=>l.m.startsWith(y+'-'));if(!ls.length)return '';const g=ls.reduce((x,l)=>x+l.ger+l.ac,0);return `<div class="who" style="margin-top:10px"><div class="row"><span>Só em ${y}</span><span>${fmtSaldo(g)}</span></div></div>`})()}
    <div class="hint" style="margin-top:10px">Cada mês, quem pagou mais que a sua cota fica com crédito. Os <b>acertos</b> (transferências entre vocês) abatem o saldo.</div>
    ${quem?`<button class="btn" data-act="acertototal" style="width:100%;margin-top:12px;padding:13px">Registrar acerto</button>`:''}</div>`;
   // por ano
@@ -1252,6 +1264,7 @@ document.addEventListener('click',async ev=>{
     case 'catsave':salvarCats();break;
     case 'bsel':S.bsel={k:b.dataset.k,v:b.dataset.v,label:b.dataset.label||b.dataset.v};S.tab='busca';render();window.scrollTo(0,0);break;
     case 'bvoltar':S.tab='mes';render();break;
+    case 'smtoggle':S.smOpen=!S.smOpen;render();break;
     case 'gofin':S.tab='fin';S.fw=S.me==='Dai'?'dai':'alex';S.fmes=S.mes;render();window.scrollTo(0,0);toast(b.title||'');break;
     case 'retro':F.retroOn=!F.retroOn;drawForm(false);break;
     case 'fw':S.fw=b.dataset.w;S.fall=false;render();window.scrollTo(0,0);break;
