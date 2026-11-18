@@ -429,7 +429,7 @@ window.addEventListener('hashchange',maybeHash);
 function render(){
   const meBtn=document.getElementById('meBtn');
   meBtn.innerHTML=S.me?`<i style="background:${cor(S.me)}"></i>${esc(S.me)}`:'<i style="background:#ccc"></i>Quem é você?';
-  document.querySelectorAll('.tabs button').forEach(b=>b.classList.toggle('on',b.dataset.tab===S.tab||(S.tab==='fincfg'&&b.dataset.tab==='fin')||(S.tab==='alucfg'&&b.dataset.tab==='alu')||(S.tab==='lugares'&&b.dataset.tab==='ajustes')));
+  document.querySelectorAll('.tabs button').forEach(b=>b.classList.toggle('on',b.dataset.tab===S.tab||(S.tab==='busca'&&b.dataset.tab==='mes')||(S.tab==='fincfg'&&b.dataset.tab==='fin')||(S.tab==='alucfg'&&b.dataset.tab==='alu')||(S.tab==='lugares'&&b.dataset.tab==='ajustes')));
   document.getElementById('fab').style.display=(S.tab==='mes'||S.tab==='analise')?'':'none';
   const v=document.getElementById('view');
   const nav=document.querySelector('.tabs');const fab=document.getElementById('fab');
@@ -443,7 +443,8 @@ function render(){
   nav.style.display='';meBtn.style.display='';
   if(S.denied){v.innerHTML=`<div class="card"><b>Sem acesso</b><p class="hint">O e-mail ${esc(S.email||'')} entrou, mas não está liberado nas regras do banco. Confira as Regras do Firestore.</p><button class="btn light sm" data-act="logout">Sair</button></div>`;return}
   if(!S.loaded.tx&&!S.local){v.innerHTML=`<div class="status">${S.slow?'Os dados ainda não carregaram — verifique a conexão.':'Carregando…'}</div>`;return}
-  if(S.tab==='mes')v.innerHTML=viewMes();
+  if(S.tab==='mes'){v.innerHTML=viewMes();ligarBusca()}
+  else if(S.tab==='busca')v.innerHTML=viewBusca();
   else if(S.tab==='analise')v.innerHTML=viewAnalise();
   else if(S.tab==='fin')v.innerHTML=viewFin();
   else if(S.tab==='fincfg'){setW(S.fw==='all'?'dai':S.fw);v.innerHTML=viewFinCfg()}
@@ -496,7 +497,8 @@ function viewMes(){
       <div class="bar" style="position:relative;overflow:visible"><i style="width:${(v/mx*100).toFixed(1)}%;background:${cor}"></i>${m>0?`<b style="position:absolute;top:-3px;left:calc(${(m/mx*100).toFixed(1)}% - 1px);width:2px;height:12px;background:#1d1f1c;border-radius:1px"></b>`:''}</div></div>
       <div class="vv">${brl0(v)}<small style="display:block;font-size:11px;color:var(--mute);font-weight:600;text-align:right">${m>0?'meta '+brl0(m):''}</small></div></div>`}).join('')+`</div>`}
   // lançamentos
-  h+=`<div class="sec"><h2>Lançamentos</h2><span>${list.length} itens</span></div>`;
+  h+=`<div class="sec"><h2>Lançamentos</h2><span>${list.length} itens</span></div>
+  <div style="position:relative;margin-bottom:6px"><input class="inp" id="bq" placeholder="🔎 Buscar despesa por nome ou categoria (todo o período)" autocomplete="off" value="${esc(S.bq||'')}"><div id="bsug"></div></div>`;
   if(!list.length)h+=`<div class="list"><div class="empty">Nada lançado em ${mesLabel(S.mes)} ainda.<br>Toque no + para começar.</div></div>`;
   let lastD=null,open=false;
   for(const e of list){
@@ -563,7 +565,7 @@ function barras(vals,labels,keys,sel,aria){
   ${vals.map((t,i)=>{const x=i*bw+bw*.18,w=bw*.64,y=yv(t);const on=keys[i]===sel;
    return `<g data-act="bar" data-l="${esc(labels[i].full)}" data-v="${t}"><rect x="${i*bw}" y="0" width="${bw}" height="${H}" fill="transparent"/>
    ${t>0?`<path d="M${x},${H-pb} V${y+Math.min(4,(H-pb-y))} q0,-${Math.min(4,(H-pb-y))} 4,-${Math.min(4,(H-pb-y))} h${w-8} q4,0 4,${Math.min(4,(H-pb-y))} V${H-pb} Z" fill="${on?'#1f5f4a':'#9fbfb2'}"/>`:''}
-   <text x="${i*bw+bw/2}" y="${H-6}" text-anchor="middle" font-size="10" fill="#8f938b" font-family="Manrope">${labels[i].s}</text></g>`}).join('')}</svg>`;
+   ${(n<=12||i%Math.ceil(n/8)===0||i===n-1)?`<text x="${i*bw+bw/2}" y="${H-6}" text-anchor="middle" font-size="10" fill="#8f938b" font-family="Manrope">${labels[i].s}</text>`:''}</g>`}).join('')}</svg>`;
 }
 function viewAno(){
   const all=entries();const y=S.ano||S.mes.slice(0,4);S.ano=y;
@@ -749,6 +751,43 @@ function abrirMeta(c){const pm=porMes(entries());const {md,n}=mediasCat(S.mes,pm
   document.getElementById('scrim').classList.add('on');sh.classList.add('on')}
 async function salvarMeta(usarMedia){const c=S.metaC;const m={...((S.cfg&&S.cfg.metas)||{})};const v=parseVal(document.getElementById('fmeta').value);
   if(usarMedia||!(v>=0))delete m[c];else m[c]=Math.round(v*100)/100;await saveCfg({...(S.cfg||{}),metas:m});closeSheet();toast('Meta salva ✓')}
+function sugBusca(q){
+  const nq=norm(q);if(!nq)return '';
+  const cs=cats().filter(c=>norm(c.nome).includes(nq)).slice(0,4);
+  const ls=(IDX||[]).filter(r=>r.k.includes(nq)||r.toks.some(t=>t.startsWith(nq))).sort((a,b)=>b.n-a.n).slice(0,7);
+  return `<div class="sugs" style="margin-top:6px">${cs.map(c=>`<button class="sug" data-act="bsel" data-k="c" data-v="${esc(c.nome)}"><span><b>${c.e} ${esc(c.nome)}</b><br><small>categoria · todos os lançamentos</small></span><small>›</small></button>`).join('')}
+  ${ls.map(r=>`<button class="sug" data-act="bsel" data-k="l" data-v="${esc(r.k)}" data-label="${esc(r.nome)}"><span><b>${esc(r.nome)}</b><br><small>${emo(r.t)} ${esc(r.t)} · ${r.n} lançamento${r.n>1?'s':''} · ${brl0(r.tot)}</small></span><small>›</small></button>`).join('')}
+  <button class="sug" data-act="bsel" data-k="t" data-v="${esc(nq)}" data-label="${esc(q)}"><span><b>Tudo que contém “${esc(q)}”</b><br><small>nome ou categoria</small></span><small>›</small></button></div>`;
+}
+function ligarBusca(){const q=document.getElementById('bq');if(!q)return;const sg=document.getElementById('bsug');
+  q.oninput=()=>{S.bq=q.value;sg.innerHTML=sugBusca(q.value)};if(S.bq)sg.innerHTML=sugBusca(S.bq);
+  q.onkeydown=e=>{if(e.key==='Enter'&&q.value.trim()){e.preventDefault();S.bsel={k:'t',v:norm(q.value),label:q.value.trim()};S.tab='busca';render();window.scrollTo(0,0)}}}
+function filtroBusca(e,b){if(e.t==='Acerto')return false;if(b.k==='c')return e.t===b.v;if(b.k==='l')return norm(e.l)===b.v;return norm(e.l).includes(b.v)||norm(e.t).includes(b.v)}
+function viewBusca(){
+  const b=S.bsel;if(!b){S.tab='mes';return viewMes()}
+  const all=entries();const res=all.filter(e=>filtroBusca(e,b)).sort((x,y)=>y.d.localeCompare(x.d));
+  const tot=res.reduce((a,e)=>a+(+e.v),0);const porM={};for(const e of res)porM[e.mes]=(porM[e.mes]||0)+(+e.v);
+  const ms=Object.keys(porM).sort();const titulo=b.k==='c'?emo(b.v)+' '+b.v:b.label||b.v;
+  let h=`<div class="mnav"><button data-act="bvoltar">‹</button><b style="font-size:20px;text-align:center;flex:1;padding:0 8px">${esc(titulo)}</b><span style="width:40px"></span></div>
+  <div class="hint" style="text-align:center;margin:-8px 0 12px">${b.k==='c'?'categoria':b.k==='l'?'lugar':'busca por texto'} · todo o período</div>`;
+  if(!res.length)return h+`<div class="list"><div class="empty">Nada encontrado.</div></div>`;
+  const pD=res.filter(e=>e.p==='Dai').reduce((a,e)=>a+(+e.v),0),cD=res.reduce((a,e)=>a+(+e.v)*(+e.cd||0),0);
+  h+=`<div class="card hero"><div class="lbl">Total gasto</div><div class="big">${brl(tot)}</div>
+   <div class="split"><div class="who"><div class="row"><span>Lançamentos</span><span>${res.length}</span></div><div class="row"><span>Por compra</span><span>${brl(tot/res.length)}</span></div></div>
+   <div class="who"><div class="row"><span>Meses</span><span>${ms.length}</span></div><div class="row"><span>Por mês</span><span>${brl(tot/ms.length)}</span></div></div></div>
+   <div class="hint" style="margin-top:8px">De ${res[res.length-1].d.split('-').reverse().join('/')} a ${res[0].d.split('-').reverse().join('/')} · Dai pagou ${brl(pD)}, Alex ${brl(tot-pD)} · cota Dai ${brl(cD)}, Alex ${brl(tot-cD)}</div></div>`;
+  // gráfico: do primeiro ao último mês (até 24 meses mais recentes)
+  let m0=ms[0],m1=ms[ms.length-1];const rng=mesesEntre(m0,m1).slice(-24);
+  h+=`<div class="card chart"><div style="font-weight:800">Por mês</div>${barras(rng.map(m=>porM[m]||0),rng.map(m=>({s:rng.length>12?m.slice(5)+'/'+m.slice(2,4):MESES[+m.slice(5)-1].slice(0,3),full:mesLabel(m)})),rng,'',`Gastos com ${titulo} por mês`)}<div class="tip" id="tip">Toque numa barra para ver o valor · tracejado = média</div></div>`;
+  // lista por mês
+  let cur=null,open=false;
+  for(const e of res){
+    if(e.mes!==cur){if(open)h+='</div>';h+=`<div class="day" style="display:flex;justify-content:space-between"><span>${mesLabel(e.mes)}</span><span>${brl(porM[e.mes])}</span></div><div class="list">`;open=true;cur=e.mes}
+    h+=`<button class="it" data-act="edit" data-id="${esc(e.id)}"><div class="ic">${emo(e.t)}</div><div class="x"><b>${esc(e.l)}</b><small><span class="dot" style="background:${cor(e.p)}"></span>${esc(e.p)} · ${e.d.split('-').reverse().slice(0,2).join('/')} · ${esc(e.t)}</small></div><div class="v">${brl(e.v)}</div></button>`;
+  }
+  if(open)h+='</div>';
+  return h;
+}
 function viewAjustes(){
   const fx=(S.cfg&&S.cfg.fixas)||FIXAS_PADRAO;const url=APP_URL.startsWith('__')?'(link do app)':APP_URL;
   return `<div class="card set"><h4>Quem está usando este celular</h4><div class="seg">${['Dai','Alex'].map(p=>`<button class="${S.me===p?'on':''}" data-act="setme" data-p="${p}">${p}</button>`).join('')}</div><p>Os lançamentos e capturas deste aparelho entram como pagos por <b>${esc(S.me||'—')}</b>.</p></div>
@@ -825,12 +864,16 @@ function drawForm(focus){
    <div class="splitlbl"><span>Dai ${pct(cd)} · ${brl(v*cd)}</span><span>Alex ${pct(1-cd)} · ${brl(v*(1-cd))}</span></div>
    <input type="range" min="0" max="100" step="5" value="${Math.round(cd*100)}" id="fcd" aria-label="Percentual da Dai"></div>`}
   <div class="fld"><label>Data</label><input class="inp" type="date" id="fd" value="${F.d}"></div>
+  ${!F.id&&!F.pend&&!F.acerto?`<div class="fld"><button class="chip ${F.retroOn?'on':''}" data-act="retro" style="width:100%;text-align:left;border-radius:12px;padding:11px 12px">${F.retroOn?'✓':'↺'} Lançar também nos meses anteriores</button>
+   ${F.retroOn?`<div style="display:grid;grid-template-columns:auto 1fr;gap:8px;align-items:center;margin-top:8px"><span class="hint" style="margin:0">desde</span><input class="inp" type="month" id="fretro" value="${F.retroDe||addMes((F.d||today()).slice(0,7),-1)}" style="min-width:0"></div><div class="hint" id="fretroinfo">${retroInfo()}</div>`:''}</div>`:''}
   <div class="actions">${F.pend?`<button class="btn bad" data-act="recusar">Recusar</button><button class="btn light" data-act="close">Depois</button><button class="btn" data-act="salvar">Aceitar</button>`:
    F.id?`<button class="btn bad" data-act="excluir">Excluir</button><button class="btn" data-act="salvar">Salvar</button>`:`<button class="btn" data-act="salvar">Lançar</button>`}</div>`;
   const fv=document.getElementById('fv');fv.oninput=()=>{F.v=fv.value;updSplit()};
   const fl=document.getElementById('fl');if(fl){fl.oninput=()=>{F.l=fl.value;F.sug=null;const pos=fl.selectionStart;drawForm(false);const n=document.getElementById('fl');n.focus();try{n.setSelectionRange(pos,pos)}catch(e){}}}
   const fcd=document.getElementById('fcd');if(fcd)fcd.oninput=()=>{F.cd=fcd.value/100;F.autoCd=false;updSplit(true)};
-  document.getElementById('fd').onchange=e=>F.d=e.target.value;
+  document.getElementById('fd').onchange=e=>{F.d=e.target.value;const i=document.getElementById('fretroinfo');if(i)i.innerHTML=retroInfo()};
+  const fr=document.getElementById('fretro');if(fr)fr.onchange=()=>{F.retroDe=fr.value;document.getElementById('fretroinfo').innerHTML=retroInfo()};
+  if(document.getElementById('fretroinfo')){const upd=()=>{const i=document.getElementById('fretroinfo');if(i)i.innerHTML=retroInfo()};fv.addEventListener('input',upd)}
   if(focus)setTimeout(()=>fv.focus(),280);
 }
 function updSplit(chips){
@@ -840,6 +883,14 @@ function updSplit(chips){
   if(chips)document.querySelectorAll('[data-act=cd]').forEach(b=>b.classList.toggle('on',Math.abs(cd-+b.dataset.x)<.001));
 }
 function closeSheet(){document.getElementById('scrim').classList.remove('on');document.getElementById('sheet').classList.remove('on');F=null}
+function retroPlano(){
+  if(!F||!F.retroOn)return {meses:[],pular:[]};const d=F.d||today();const ate=addMes(d.slice(0,7),-1);const de=F.retroDe||ate;
+  if(de>ate)return {meses:[],pular:[]};const todos=mesesEntre(de,ate).slice(-36);const nl=norm(F.l);const all=entries();
+  const pular=todos.filter(m=>nl&&all.some(e=>e.mes===m&&norm(e.l)===nl));return {meses:todos.filter(m=>!pular.includes(m)),pular};
+}
+function retroInfo(){const {meses,pular}=retroPlano();const v=parseVal(F.v)||0;
+  if(!meses.length&&!pular.length)return 'Escolha um mês anterior à data do lançamento.';
+  return `${meses.length===1?'Será criado':'Serão criados'} <b>${meses.length}</b> lançamento${meses.length===1?'':'s'} extra${meses.length===1?'':'s'} (${meses.length?mesLabel(meses[0])+' → '+mesLabel(meses[meses.length-1]):'nenhum'}), total <b>${brl(v*meses.length)}</b>, no mesmo dia do mês.${pular.length?` Pulando ${pular.length} ${pular.length>1?'meses que já têm':'mês que já tem'} “${esc(F.l)}”: ${pular.map(m=>MESES[+m.slice(5)-1].slice(0,3)+'/'+m.slice(2,4)).join(', ')}.`:''}`}
 async function salvar(){
   const v=parseVal(F.v);
   if(!(v>0)){toast('Informe o valor.');return}
@@ -852,7 +903,10 @@ async function salvar(){
     else if(F.txId){const old=S.tx.find(t=>t._id===F.txId);if(old&&old.ref)data.ref=old.ref;await saveTx(F.txId,data)}
     else await saveTx(null,data);
     if(F.pend)await delPend(F.pend._id);
-    const m=data.mes;closeSheet();if(m!==S.mes){S.mes=m}render();toast('Salvo ✓');
+    const plano=(!F.id&&!F.pend&&!F.acerto)?retroPlano().meses:[];let n=0;
+    if(plano.length){const dia=+d.slice(8,10);for(const mm of plano){const [yy,mo]=mm.split('-').map(Number);const ult=new Date(yy,mo,0).getDate();const dd=mm+'-'+String(Math.min(dia,ult)).padStart(2,'0');
+      await saveTx(null,{...data,d:dd,mes:mm,src:'retro',at:Date.now()});n++;toast('Lançando meses anteriores… '+n+'/'+plano.length)}}
+    const m=data.mes;closeSheet();if(m!==S.mes){S.mes=m}render();toast(n?`Salvo ✓ + ${n} ${n>1?'meses anteriores':'mês anterior'}`:'Salvo ✓');
   }catch(e){}
 }
 async function excluir(){
@@ -1138,6 +1192,9 @@ document.addEventListener('click',async ev=>{
     case 'catdel':{const l=readCats();S.catDraft=l;abrirExcluirCat(+b.dataset.i);break}
     case 'catdelok':confirmarExcluirCat();break;
     case 'catsave':salvarCats();break;
+    case 'bsel':S.bsel={k:b.dataset.k,v:b.dataset.v,label:b.dataset.label||b.dataset.v};S.tab='busca';render();window.scrollTo(0,0);break;
+    case 'bvoltar':S.tab='mes';render();break;
+    case 'retro':F.retroOn=!F.retroOn;drawForm(false);break;
     case 'fw':S.fw=b.dataset.w;S.fall=false;render();window.scrollTo(0,0);break;
     case 'fprev':S.fmes=addMes(S.fmes,-1);render();break;
     case 'fnext':S.fmes=addMes(S.fmes,1);render();break;
