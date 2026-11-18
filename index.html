@@ -286,12 +286,12 @@ function mediasCat(mref,pm){const ms=[];for(let k=1;k<=12;k++){const m=addMes(mr
   const md={};for(const m of ms)for(const c in pm[m].cats)md[c]=(md[c]||0)+pm[m].cats[c];for(const c in md)md[c]/=ms.length;return {md,n:ms.length}}
 function metasDoMes(mref,pm){const {md}=mediasCat(mref,pm);const ov=(S.cfg&&S.cfg.metas)||{};const out={};
   for(const c of new Set([...Object.keys(md),...Object.keys(ov)])){const o=ov[resolveCat(c)]??ov[c];out[resolveCat(c)]=(o!=null&&o!=='')?+o:(md[c]||0)}return out}
-function saldoMesCasa(m,gasto){
+function saldoMesCasa(m,gasto,quem){
   if(typeof FIN_WS==='undefined')return null;const atual=S.fin;let rec=0,tem=false;
-  for(const w of FIN_WS){const W=S.fins[w];if(!W||(!W.cfg&&!Object.keys(W.meses).length))continue;S.fin=W;for(const f of fcfg().fontes){const v=fRec(m,f);if(v){rec+=v;tem=true}}}
+  for(const w of [quem==='Dai'?'dai':'alex']){const W=S.fins[w];if(!W||(!W.cfg&&!Object.keys(W.meses).length))continue;S.fin=W;for(const f of fcfg().fontes){const v=fRec(m,f);if(v){rec+=v;tem=true}}}
   S.fin=atual;if(!tem||rec<=0)return null;
   const saldo=rec-gasto,marg=saldo/rec;
-  const [emo,cor,dica]=saldo<0?['😟','var(--bad)','Gastos da casa acima das receitas do mês']:marg<=.05?['🛑','var(--bad)','Pare: folga de até 5% da receita']:marg<=.15?['⚠️','var(--warn)','Atenção: folga de até 15% da receita']:['✅','#1f6b45','Folga confortável (mais de 15% da receita)'];
+  const [emo,cor,dica]=saldo<0?['😟','var(--bad)','O que você pagou da casa passou da sua receita do mês']:marg<=.05?['🛑','var(--bad)','Pare: folga de até 5% da receita']:marg<=.15?['⚠️','var(--warn)','Atenção: folga de até 15% da receita']:['✅','#1f6b45','Folga confortável (mais de 15% da receita)'];
   return {rec,saldo,marg,emo,cor,dica};
 }
 function fixasStatus(list,m){
@@ -439,7 +439,7 @@ window.addEventListener('hashchange',maybeHash);
 function render(){
   const meBtn=document.getElementById('meBtn');
   meBtn.innerHTML=S.me?`<i style="background:${cor(S.me)}"></i>${esc(S.me)}`:'<i style="background:#ccc"></i>Quem é você?';
-  document.querySelectorAll('.tabs button').forEach(b=>b.classList.toggle('on',b.dataset.tab===S.tab||(S.tab==='busca'&&b.dataset.tab==='mes')||(S.tab==='fincfg'&&b.dataset.tab==='fin')||(S.tab==='alucfg'&&b.dataset.tab==='alu')||(S.tab==='lugares'&&b.dataset.tab==='ajustes')));
+  document.querySelectorAll('.tabs button').forEach(b=>b.classList.toggle('on',b.dataset.tab===S.tab||(S.tab==='busca'&&b.dataset.tab==='mes')||(S.tab==='acertos'&&b.dataset.tab==='analise')||(S.tab==='fincfg'&&b.dataset.tab==='fin')||(S.tab==='alucfg'&&b.dataset.tab==='alu')||(S.tab==='lugares'&&b.dataset.tab==='ajustes')));
   document.getElementById('fab').style.display=(S.tab==='mes'||S.tab==='analise')?'':'none';
   const v=document.getElementById('view');
   const nav=document.querySelector('.tabs');const fab=document.getElementById('fab');
@@ -455,6 +455,7 @@ function render(){
   if(!S.loaded.tx&&!S.local){v.innerHTML=`<div class="status">${S.slow?'Os dados ainda não carregaram — verifique a conexão.':'Carregando…'}</div>`;return}
   if(S.tab==='mes'){v.innerHTML=viewMes();ligarBusca()}
   else if(S.tab==='busca')v.innerHTML=viewBusca();
+  else if(S.tab==='acertos')v.innerHTML=viewAcertos();
   else if(S.tab==='analise')v.innerHTML=viewAnalise();
   else if(S.tab==='fin')v.innerHTML=viewFin();
   else if(S.tab==='fincfg'){setW(S.fw==='all'?'dai':S.fw);v.innerHTML=viewFinCfg()}
@@ -480,15 +481,17 @@ function viewMes(){
   }
   // herói
   const deve=r.saldoDai>0.005?'Alex':r.saldoDai<-0.005?'Dai':null;
-  const sm=saldoMesCasa(S.mes,r.tot);
+  const sm=S.me?saldoMesCasa(S.mes,S.me==='Dai'?r.pDai:r.pAlex,S.me):null;
   h+=`<div class="card hero"><div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px"><div style="min-width:0"><div class="lbl">Gastos da casa no mês</div><div class="big">${brl(r.tot)}</div></div>
-  ${sm?`<button data-act="gofin" title="${esc(sm.dica)}" style="all:unset;cursor:pointer;text-align:right;flex:0 0 auto;padding-top:2px"><div style="font-size:22px;line-height:1">${sm.emo}</div><div style="font-size:11px;color:var(--ink2);font-weight:600;margin-top:4px">receitas ${brl0(sm.rec)}</div><div style="font-size:13px;font-weight:800;color:${sm.cor};white-space:nowrap">saldo ${sm.saldo<0?'−':''}${brl0(Math.abs(sm.saldo))}</div><div style="font-size:10.5px;color:var(--mute);font-weight:600">${sm.saldo<0?'acima da receita':pct(sm.marg)+' de folga'}</div></button>`:''}</div>
+  ${sm?`<button data-act="gofin" title="${esc(sm.dica)}" style="all:unset;cursor:pointer;text-align:right;flex:0 0 auto;padding-top:2px"><div style="font-size:22px;line-height:1">${sm.emo}</div><div style="font-size:11px;color:var(--ink2);font-weight:600;margin-top:4px">${esc(S.me)}: receita ${brl0(sm.rec)}</div><div style="font-size:11px;color:var(--ink2);font-weight:600">você pagou ${brl0(sm.rec-sm.saldo)}</div><div style="font-size:13px;font-weight:800;color:${sm.cor};white-space:nowrap">saldo ${sm.saldo<0?'−':''}${brl0(Math.abs(sm.saldo))}</div><div style="font-size:10.5px;color:var(--mute);font-weight:600">${sm.saldo<0?'acima da receita':pct(sm.marg)+' de folga'}</div></button>`:''}</div>
   <div class="split">
    ${['Dai','Alex'].map(p=>`<div class="who"><div class="n"><i style="background:${cor(p)}"></i>${p}</div>
      <div class="row"><span>Cota</span><span>${brl(p==='Dai'?r.cDai:r.cAlex)}</span></div>
      <div class="row"><span>Pagou</span><span>${brl(p==='Dai'?r.pDai:r.pAlex)}</span></div></div>`).join('')}
   </div>
-  <div class="saldo">${deve?`<div><div class="t">${deve} deve ${brl(Math.abs(r.saldoDai))} para ${outro(deve)}</div><div class="s">diferença entre o que cada um pagou e a sua cota</div></div><button class="btn sm ghost" data-act="acerto">Acertar</button>`:`<div><div class="t">Tudo certo ✓</div><div class="s">ninguém deve ninguém neste mês</div></div>`}</div></div>`;
+  <div class="saldo">${deve?`<div><div class="t">${deve} deve ${brl(Math.abs(r.saldoDai))} para ${outro(deve)}</div><div class="s">neste mês · diferença entre o que cada um pagou e a sua cota</div></div><button class="btn sm ghost" data-act="acerto">Acertar</button>`:`<div><div class="t">Tudo certo ✓</div><div class="s">ninguém deve ninguém neste mês</div></div>`}</div>
+  ${(()=>{const q=quadroAcertos();const a=q.acum;if(!q.linhas.length)return '';const quem=a>0.005?'Alex deve':a<-0.005?'Dai deve':null;
+    return `<button data-act="goacertos" class="who" style="margin-top:8px;display:flex;justify-content:space-between;align-items:center;text-align:left;font:inherit;cursor:pointer"><span><b style="font-size:13.5px">Saldo acumulado: ${quem?`${quem} ${brl(Math.abs(a))} ${a>0?'para Dai':'para Alex'}`:'zerado ✓'}</b><br><small style="color:var(--ink2)">desde ${mesLabel(q.inicio)} · com os acertos lançados</small></span><b style="color:var(--acc)">Quadro ›</b></button>`})()}</div>`;
   // fixas
   const fx=fixasStatus(list,S.mes);
   h+=`<div class="sec"><h2>Contas fixas</h2><span>toque para lançar</span></div><div class="fixas">`+
@@ -524,7 +527,7 @@ function viewMes(){
   h+=`<div style="display:flex;gap:8px;margin-top:14px"><button class="btn light sm" data-act="copy" style="flex:1">📋 Copiar mês p/ planilha</button></div>`;
   return h;
 }
-function segAn(){const m=S.amode||'mes';return `<div class="seg" style="margin-bottom:12px;grid-template-columns:1fr 1fr 1fr">${[['mes','Mês'],['ano','Ano'],['per','Período']].map(([k,t])=>`<button class="${m===k?'on':''}" data-act="amode" data-m="${k}">${t}</button>`).join('')}</div>`}
+function segAn(){const m=S.tab==='acertos'?'ac':(S.amode||'mes');return `<div class="seg" style="margin-bottom:12px;grid-template-columns:1fr 1fr 1fr 1fr">${[['mes','Mês'],['ano','Ano'],['per','Período'],['ac','Acertos']].map(([k,t])=>`<button class="${m===k?'on':''}" ${k==='ac'?'data-act="goacertos"':`data-act="amode" data-m="${k}"`} style="padding:10px 4px">${t}</button>`).join('')}</div>`}
 function mesesEntre(de,ate){const out=[];if(!de||!ate)return out;if(de>ate)[de,ate]=[ate,de];let m=de,k=0;while(m<=ate&&k++<120){out.push(m);m=addMes(m,1)}return out}
 function periodoAtual(){
   const P=S.per||(S.per={tipo:'s',ano:ym(new Date()).slice(0,4),sem:new Date().getMonth()<6?1:2});const hoje=ym(new Date());
@@ -800,6 +803,40 @@ function viewBusca(){
   if(open)h+='</div>';
   return h;
 }
+function quadroAcertos(){
+  const all=entries();const inicio=(S.cfg&&S.cfg.acertoInicio)||'2025-01';
+  let fim=ym(new Date());for(const e of all)if(e.mes>fim)fim=e.mes;
+  const por={};for(const e of all){if(e.mes<inicio)continue;const o=por[e.mes]||(por[e.mes]={tot:0,cD:0,pD:0,ac:0,lista:[]});const v=+e.v||0;
+    if(e.t==='Acerto'){const ef=e.p==='Dai'?v:-v;o.ac+=ef;o.lista.push(e)}else{o.tot+=v;o.cD+=v*(+e.cd||0);if(e.p==='Dai')o.pD+=v}}
+  const linhas=[];let acum=0;for(const m of mesesEntre(inicio,fim)){const o=por[m]||{tot:0,cD:0,pD:0,ac:0,lista:[]};const ger=o.pD-o.cD;acum+=ger+o.ac;linhas.push({m,tot:o.tot,ger,ac:o.ac,acum,lista:o.lista})}
+  while(linhas.length&&!linhas[linhas.length-1].tot&&!linhas[linhas.length-1].ac&&linhas[linhas.length-1].m>ym(new Date()))linhas.pop();
+  return {inicio,linhas,acum:linhas.length?linhas[linhas.length-1].acum:0};
+}
+function fmtSaldo(v,curto){if(Math.abs(v)<0.005)return '<span style="color:var(--mute)">—</span>';const a=v>0?'Alex→Dai':'Dai→Alex';const c=v>0?'var(--dai)':'var(--alex)';
+  return `<span style="white-space:nowrap"><b>${curto?brl0(Math.abs(v)):brl(Math.abs(v))}</b> <small style="color:${c};font-weight:700">${a}</small></span>`}
+function viewAcertos(){
+  const q=quadroAcertos();const a=q.acum;let h=segAn();
+  const quem=a>0.005?'Alex':a<-0.005?'Dai':null;
+  h+=`<div class="card hero"><div class="lbl">Saldo acumulado entre vocês · desde ${mesLabel(q.inicio)}</div>
+   <div class="big" style="font-size:28px">${quem?`${quem} deve ${brl(Math.abs(a))}`:'Tudo acertado ✓'}</div>${quem?`<div class="hint" style="margin-top:-6px">para ${outro(quem)}</div>`:''}
+   <div class="hint" style="margin-top:10px">Cada mês, quem pagou mais que a sua cota fica com crédito. Os <b>acertos</b> (transferências entre vocês) abatem o saldo.</div>
+   ${quem?`<button class="btn" data-act="acertototal" style="width:100%;margin-top:12px;padding:13px">Registrar acerto</button>`:''}</div>`;
+  // por ano
+  const anos={};for(const l of q.linhas){const y=l.m.slice(0,4);const o=anos[y]||(anos[y]={ger:0,ac:0,fim:0,tot:0});o.ger+=l.ger;o.ac+=l.ac;o.fim=l.acum;o.tot+=l.tot}
+  const ys=Object.keys(anos).sort();S.acAno=S.acAno&&anos[S.acAno]?S.acAno:ys[ys.length-1];
+  h+=`<div class="sec"><h2>Ano a ano</h2><span>toque para ver os meses</span></div><div class="list">`+ys.slice().reverse().map(y=>{const o=anos[y];return `<button class="it" data-act="acano" data-y="${y}" style="${y===S.acAno?'background:#f1f6f3':''}"><div class="x"><b>${y}</b><small>gerado no ano: ${fmtSaldo(o.ger,true)} · acertos: ${o.ac?brl0(Math.abs(o.ac))+(o.ac>0?' Dai→Alex':' Alex→Dai'):'—'}</small></div><div class="v" style="font-size:13px">${fmtSaldo(o.fim,true)}<small style="color:var(--mute)">acumulado</small></div></button>`}).join('')+`</div>`;
+  // mês a mês do ano escolhido
+  const ls=q.linhas.filter(l=>l.m.startsWith(S.acAno+'-'));
+  h+=`<div class="sec"><h2>Mês a mês · ${S.acAno}</h2><span>toque para abrir o mês</span></div><div class="card" style="padding:6px 12px">
+   <div style="display:grid;grid-template-columns:1.1fr 1.3fr 1fr 1.4fr;gap:6px;font-size:11px;font-weight:700;color:var(--mute);text-transform:uppercase;padding:6px 0;border-bottom:1px solid #f2f0ea"><span>Mês</span><span>Gerado</span><span>Acertos</span><span style="text-align:right">Acumulado</span></div>`+
+   ls.map(l=>`<button data-act="acmes" data-m="${l.m}" style="all:unset;display:grid;grid-template-columns:1.1fr 1.3fr 1fr 1.4fr;gap:6px;width:100%;padding:9px 0;border-bottom:1px solid #f6f4ef;font-size:12.5px;cursor:pointer;align-items:center"><span style="text-transform:capitalize;font-weight:700">${MESES[+l.m.slice(5)-1].slice(0,3)}</span><span>${fmtSaldo(l.ger,true)}</span><span>${l.ac?`<b>${brl0(Math.abs(l.ac))}</b> <small style="color:var(--mute)">${l.ac>0?'D→A':'A→D'}</small>`:'<span style="color:var(--mute)">—</span>'}</span><span style="text-align:right">${fmtSaldo(l.acum,true)}</span></button>`).join('')+`</div>
+   <div class="hint" style="margin-top:6px"><b>Gerado</b> = quem ficou com crédito no mês (Alex→Dai: Alex deve à Dai). <b>Acertos</b>: D→A = Dai pagou ao Alex.</div>`;
+  // lista de acertos
+  const acs=q.linhas.flatMap(l=>l.lista).sort((x,y)=>y.d.localeCompare(x.d));
+  h+=`<div class="sec"><h2>Acertos lançados</h2><span>${acs.length}</span></div><div class="list">`+(acs.length?acs.map(e=>`<button class="it" data-act="edit" data-id="${esc(e.id)}"><div class="ic">🔁</div><div class="x"><b>${esc(e.p)} → ${esc(outro(e.p))}</b><small>${e.d.split('-').reverse().join('/')}</small></div><div class="v">${brl(e.v)}</div></button>`).join(''):'<div class="empty">Nenhum acerto lançado ainda.<br>Use “Registrar acerto” quando um transferir dinheiro para o outro.</div>')+`</div>`;
+  h+=`<div class="card set" style="margin-top:12px"><h4>Início da contagem</h4><p>Meses antes desta data não entram no saldo (por exemplo, se já estavam acertados).</p><div style="display:grid;grid-template-columns:1fr auto;gap:8px"><input class="inp" type="month" id="acini" value="${q.inicio}" style="min-width:0"><button class="btn sm" data-act="acinicio">Salvar</button></div></div>`;
+  return h;
+}
 function viewAjustes(){
   const fx=(S.cfg&&S.cfg.fixas)||FIXAS_PADRAO;const url=APP_URL.startsWith('__')?'(link do app)':APP_URL;
   return `<div class="card set"><h4>Quem está usando este celular</h4><div class="seg">${['Dai','Alex'].map(p=>`<button class="${S.me===p?'on':''}" data-act="setme" data-p="${p}">${p}</button>`).join('')}</div><p>Os lançamentos e capturas deste aparelho entram como pagos por <b>${esc(S.me||'—')}</b>.</p></div>
@@ -838,7 +875,7 @@ function openForm(opts={}){
   const e=opts.edit;const p=opts.pend;
   F={id:e?e.id:null,isHist:e&&e.src==='planilha'&&e.id.startsWith('h:'),txId:null,
      v:e?e.v:(p?p.v:(opts.v||'')),l:e?e.l:(opts.l||''),t:e?e.t:(opts.t||''),p:e?e.p:(p?p.by:(S.me||'Alex')),
-     cd:e?+e.cd:(opts.cd??null),d:e?e.d:(p&&p.d?p.d:today()),pend:p||null,acerto:!!opts.acerto,src:e?e.src:(p?'nfc':'manual'),autoT:!e,autoCd:!e&&opts.cd==null};
+     cd:e?+e.cd:(opts.cd??null),d:e?e.d:(p&&p.d?p.d:today()),pend:p||null,acerto:!!opts.acerto||!!(e&&e.t==='Acerto'),src:e?e.src:(p?'nfc':'manual'),autoT:!e,autoCd:!e&&opts.cd==null};
   if(e){F.sug=(IDX||[]).find(x=>x.k===norm(e.l))||true}
   if(e&&!F.isHist){F.txId=e.id}
   if(e&&e.ref){F.txId=e.id}
@@ -858,8 +895,9 @@ function drawForm(focus){
   const sh=document.getElementById('sheet');const cd=F.cd;const v=parseVal(F.v)||0;
   const sugs=sugerir(F.l,F.l?5:0);const quick=!F.l?sugerir('',10):[];
   const lastInfo=F.sug&&F.sug.last&&!F.id?`Última vez: ${brl(F.sug.last.v)} em ${F.sug.last.d.split('-').reverse().join('/')} · média ${brl(F.sug.vals.reduce((a,b)=>a+b,0)/F.sug.vals.length)}`:'';
-  const title=F.acerto?'Registrar acerto':F.pend?'Pagamento por aproximação':F.id?'Editar lançamento':'Novo lançamento';
+  const title=F.acerto?(F.id?'Editar acerto':'Registrar acerto'):F.pend?'Pagamento por aproximação':F.id?'Editar lançamento':'Novo lançamento';
   sh.innerHTML=`<div class="grab"></div><h3>${title}<button class="btn light sm" data-act="close">Fechar</button></h3>
+  ${!F.id&&!F.pend&&!F.acerto?`<button class="chip" data-act="virarAcerto" style="margin-bottom:10px">🔁 É um acerto entre Dai e Alex?</button>`:''}
   ${F.pend?`<div class="capt">📲 Capturado do Apple Pay${F.pend.raw?': “'+esc(F.pend.raw)+'”':''} — confira e aceite.</div>`:''}
   <div class="amt"><span>R$</span><input id="fv" inputmode="decimal" placeholder="0,00" value="${F.v===''?'':esc(typeof F.v==='number'?F.v.toFixed(2).replace('.',','):F.v)}"></div>
   ${F.acerto?`<p class="hint">Quem transferiu o dinheiro para o outro:</p>`:`
@@ -870,7 +908,7 @@ function drawForm(focus){
   </div>
   <div class="fld"><label>Categoria</label><div class="chips scroll">${cats().map(c=>`<button class="chip ${F.t===c.nome?'on':''}" data-act="cat" data-c="${esc(c.nome)}">${c.e} ${esc(c.nome)}</button>`).join('')}</div></div>`}
   <div class="fld"><label>${F.acerto?'Pagou':'Quem pagou'}</label><div class="seg">${['Dai','Alex'].map(p=>`<button class="${F.p===p?'on':''}" data-act="payer" data-p="${p}">${p}</button>`).join('')}</div></div>
-  ${F.acerto?`<p class="hint">${F.p} transfere ${brl(v)} para ${outro(F.p)}.</p>`:`
+  ${F.acerto?`<p class="hint"><b>${F.p}</b> transfere ${brl(v)} para <b>${outro(F.p)}</b>. Isso abate ${brl(v)} do que ${F.p} deve (ou aumenta o crédito de ${F.p}). Não entra nos gastos da casa.</p>`:`
   <div class="fld"><label>Divisão</label><div class="chips">${[[.6,'60/40'],[.5,'50/50'],[1,'Só Dai'],[0,'Só Alex']].map(([x,l])=>`<button class="chip ${Math.abs(cd-x)<.001?'on':''}" data-act="cd" data-x="${x}">${l}</button>`).join('')}</div>
    <div class="splitbar"><i style="width:${cd*100}%;background:var(--dai)"></i><i style="flex:1;background:var(--alex)"></i></div>
    <div class="splitlbl"><span>Dai ${pct(cd)} · ${brl(v*cd)}</span><span>Alex ${pct(1-cd)} · ${brl(v*(1-cd))}</span></div>
@@ -1184,13 +1222,19 @@ document.addEventListener('click',async ev=>{
     case 'salvar':salvar();break;
     case 'excluir':excluir();break;
     case 'recusar':{const id=F.pend._id;closeSheet();await delPend(id);toast('Descartado');break}
+    case 'goacertos':S.tab='acertos';render();window.scrollTo(0,0);break;
+    case 'acano':S.acAno=b.dataset.y;render();break;
+    case 'acmes':S.mes=b.dataset.m;S.tab='mes';render();window.scrollTo(0,0);break;
+    case 'acinicio':{const v=document.getElementById('acini').value;if(v){await saveCfg({...(S.cfg||{}),acertoInicio:v});toast('Início da contagem salvo ✓')}break}
+    case 'acertototal':{const q=quadroAcertos();const a=q.acum;openForm({acerto:true,v:Math.abs(a).toFixed(2).replace('.',','),focus:false});F.p=a>0?'Alex':'Dai';F.d=today();drawForm(false);break}
+    case 'virarAcerto':{const v=F.v,d=F.d;openForm({acerto:true,v,focus:false});F.d=d;F.p=S.me||'Dai';drawForm(false);break}
     case 'acerto':{const r=resumo(doMes(all(),S.mes));const quem=r.saldoDai>0?'Alex':'Dai';
       openForm({acerto:true,v:Math.abs(r.saldoDai).toFixed(2).replace('.',','),focus:false});F.p=quem;F.d=S.mes===ym(new Date())?today():S.mes+'-28';drawForm(false);break}
     case 'fixa':{const list=doMes(all(),S.mes);const f=fixasStatus(list,S.mes)[+b.dataset.i];
       if(f.st==='ok'&&f.hits.length===1){openForm({edit:f.hits[0]});break}
       openForm({l:f.nome,t:f.t,cd:f.cd,v:String(f.v).replace('.',','),focus:false});F.d=S.mes===ym(new Date())?today():S.mes+'-'+String(Math.min(f.dia,28)).padStart(2,'0');drawForm(false);break}
     case 'bar':document.getElementById('tip').innerHTML=`<b>${esc(b.dataset.l)}</b>: ${brl(+b.dataset.v)}`;break;
-    case 'amode':S.amode=b.dataset.m;S.acat=null;if(S.amode==='ano')S.ano=S.mes.slice(0,4);render();break;
+    case 'amode':S.tab='analise';S.amode=b.dataset.m;S.acat=null;if(S.amode==='ano')S.ano=S.mes.slice(0,4);render();break;
     case 'per':{const k=b.dataset.k;const P=S.per||{};const a=P.ano||ym(new Date()).slice(0,4);
       if(k==='s1'||k==='s2')S.per={tipo:'s',ano:a,sem:k==='s1'?1:2};else if(k[0]==='u')S.per={tipo:'u',n:+k.slice(1),ano:a};else{const pa=periodoAtual();S.per={tipo:'c',de:pa.ms[0],ate:pa.ms[pa.ms.length-1],ano:a}}
       render();break}
@@ -1206,7 +1250,7 @@ document.addEventListener('click',async ev=>{
     case 'catsave':salvarCats();break;
     case 'bsel':S.bsel={k:b.dataset.k,v:b.dataset.v,label:b.dataset.label||b.dataset.v};S.tab='busca';render();window.scrollTo(0,0);break;
     case 'bvoltar':S.tab='mes';render();break;
-    case 'gofin':S.tab='fin';S.fw='all';S.fmes=S.mes;render();window.scrollTo(0,0);toast(b.title||'');break;
+    case 'gofin':S.tab='fin';S.fw=S.me==='Dai'?'dai':'alex';S.fmes=S.mes;render();window.scrollTo(0,0);toast(b.title||'');break;
     case 'retro':F.retroOn=!F.retroOn;drawForm(false);break;
     case 'fw':S.fw=b.dataset.w;S.fall=false;render();window.scrollTo(0,0);break;
     case 'fprev':S.fmes=addMes(S.fmes,-1);render();break;
