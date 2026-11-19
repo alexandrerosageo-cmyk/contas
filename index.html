@@ -207,6 +207,7 @@ function pct(x){return Math.round(x*100)+'%'}
 function norm(s){return (s||'').toString().normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim()}
 function esc(s){return (s??'').toString().replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 function parseVal(s){if(typeof s==='number')return s;s=(s||'').toString().replace(/[^\d,.-]/g,'');if(!s)return NaN;
+  if(s.includes(',')&&s.includes('.')){if(s.lastIndexOf('.')>s.lastIndexOf(','))s=s.replace(/,/g,'');else s=s.replace(/\./g,'').replace(',','.');return parseFloat(s)}
   if(s.includes(',')){s=s.replace(/\./g,'').replace(',','.')}else if((s.match(/\./g)||[]).length>1){s=s.replace(/\./g,'')}
   return parseFloat(s)}
 function mesLabel(m){const[y,mm]=m.split('-');return MESES[+mm-1]+' '+y}
@@ -395,8 +396,68 @@ async function login(ev){
   catch(e){msg.textContent=(e.code||'').includes('invalid')||(e.code||'').includes('wrong')||(e.code||'').includes('user-not-found')?'E-mail ou senha incorretos.':'Não foi possível entrar ('+(e.code||'erro')+').'}
 }
 async function logout(){try{lsSet('cc_me',null);await S.auth.au.signOut(S.auth.auth)}catch(e){}}
+function snapshotDocs(){
+  const o={};for(const [m,d] of Object.entries(S.hist))o['hist/'+m]=d;for(const t of S.tx){const {_id,...d}=t;o['tx/'+_id]=d}for(const p of S.pend){const {_id,...d}=p;o['pend/'+_id]=d}
+  if(S.cfg)o['cfg/main']=S.cfg;for(const w of FIN_WS){const W=S.fins[w];if(W.cfg)o[finCfgW(w)]=W.cfg;for(const [m,d] of Object.entries(W.meses))o[finColW(w)+'/'+m]=d}
+  if(S.alu.cfg)o['cfg/alu']=S.alu.cfg;for(const [k,d] of Object.entries(S.alu.meses))o['alu/'+k]=d;return o}
+function baixarArquivo(blob,nome){const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=nome;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},2000)}
+function baixarJSON(){const b=new Blob([JSON.stringify({backup:snapshotDocs(),geradoEm:new Date().toISOString()})],{type:'application/json'});baixarArquivo(b,'contas-casa-backup-'+today()+'.json');toast('Cópia completa baixada ✓')}
+/* gerador de .xlsx próprio (zip sem compressão), sem depender de internet */
+const CRC_T=(()=>{const t=new Uint32Array(256);for(let n=0;n<256;n++){let c=n;for(let k=0;k<8;k++)c=c&1?0xEDB88320^(c>>>1):c>>>1;t[n]=c>>>0}return t})();
+function crc32(u){let c=0xFFFFFFFF;for(let i=0;i<u.length;i++)c=CRC_T[(c^u[i])&255]^(c>>>8);return (c^0xFFFFFFFF)>>>0}
+function zipStore(files){const enc=new TextEncoder();const parts=[],central=[];let off=0;
+  const u16=v=>[v&255,(v>>>8)&255],u32=v=>[v&255,(v>>>8)&255,(v>>>16)&255,(v>>>24)&255];
+  for(const [name,txt] of files){const nm=enc.encode(name),data=enc.encode(txt),crc=crc32(data);
+    const lh=new Uint8Array([...u32(0x04034b50),...u16(20),...u16(0x0800),...u16(0),...u16(0),...u16(0x21),...u32(crc),...u32(data.length),...u32(data.length),...u16(nm.length),...u16(0)]);
+    parts.push(lh,nm,data);central.push(new Uint8Array([...u32(0x02014b50),...u16(20),...u16(20),...u16(0x0800),...u16(0),...u16(0),...u16(0x21),...u32(crc),...u32(data.length),...u32(data.length),...u16(nm.length),...u16(0),...u16(0),...u16(0),...u16(0),...u32(0),...u32(off)]),nm);
+    off+=lh.length+nm.length+data.length}
+  const cdSize=central.reduce((a,x)=>a+x.length,0);const end=new Uint8Array([...u32(0x06054b50),...u16(0),...u16(0),...u16(files.length),...u16(files.length),...u32(cdSize),...u32(off),...u16(0)]);
+  return new Blob([...parts,...central,end],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'})}
+function xlsxBlob(sheets){
+  const x=v=>String(v).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])).replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g,'');
+  const col=i=>{let s='';i++;while(i){const m=(i-1)%26;s=String.fromCharCode(65+m)+s;i=Math.floor((i-1)/26)}return s};
+  const names=Object.keys(sheets).map((n,i,a)=>{let b=n.replace(/[\\\/?*\[\]:]/g,' ').slice(0,31);return b});
+  const files=[];
+  files.push(['[Content_Types].xml',`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>${names.map((_,i)=>`<Override PartName="/xl/worksheets/sheet${i+1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join('')}</Types>`]);
+  files.push(['_rels/.rels','<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>']);
+  files.push(['xl/workbook.xml',`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>${names.map((n,i)=>`<sheet name="${x(n)}" sheetId="${i+1}" r:id="rId${i+1}"/>`).join('')}</sheets></workbook>`]);
+  files.push(['xl/_rels/workbook.xml.rels',`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${names.map((_,i)=>`<Relationship Id="rId${i+1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${i+1}.xml"/>`).join('')}<Relationship Id="rId${names.length+1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`]);
+  files.push(['xl/styles.xml','<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><numFmts count="1"><numFmt numFmtId="164" formatCode="#,##0.00"/></numFmts><fonts count="2"><font><sz val="11"/><name val="Calibri"/><family val="2"/></font><font><b/><sz val="11"/><name val="Calibri"/><family val="2"/></font></fonts><fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="3"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/><xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>']);
+  Object.values(sheets).forEach((rows,si)=>{
+    const w=rows[0].map((_,i)=>Math.min(45,Math.max(9,...rows.slice(0,300).map(r=>String(r[i]??'').length+2))));
+    const body=rows.map((r,ri)=>`<row r="${ri+1}">${r.map((v,ci)=>{if(v==null||v==='')return '';const ref=col(ci)+(ri+1);
+      if(typeof v==='number'&&isFinite(v))return `<c r="${ref}"${ri?' s="2"':' s="1"'}><v>${v}</v></c>`;return `<c r="${ref}" t="inlineStr"${ri?'':' s="1"'}><is><t xml:space="preserve">${x(v)}</t></is></c>`}).join('')}</row>`).join('');
+    files.push([`xl/worksheets/sheet${si+1}.xml`,`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews><cols>${w.map((c,i)=>`<col min="${i+1}" max="${i+1}" width="${c}" customWidth="1"/>`).join('')}</cols><sheetData>${body}</sheetData></worksheet>`]);
+  });
+  return zipStore(files);
+}
+function planilhasBackup(){
+  const all=entries().slice().sort((a,b)=>a.d.localeCompare(b.d));const sh={};
+  sh['Lançamentos']=[['Data','Mês','Valor','Pago por','Onde','Categoria','Cota Dai %','Cota Dai R$','Cota Alex R$','Origem']].concat(all.map(e=>[e.d,e.mes,+e.v,e.p,e.l,e.t,+e.cd,Math.round(e.v*e.cd*100)/100,Math.round(e.v*(1-e.cd)*100)/100,e.src||'']));
+  const ms=[...new Set(all.map(e=>e.mes))].sort();
+  sh['Resumo mensal']=[['Mês','Gastos da casa','Cota Dai','Cota Alex','Pagou Dai','Pagou Alex','Saldo do mês (+ Alex deve à Dai)']].concat(ms.map(m=>{const r=resumo(doMes(all,m));return [m,r.tot,r.cDai,r.cAlex,r.pDai,r.pAlex,r.saldoDai].map((x,i)=>i?Math.round(x*100)/100:x)}));
+  const q=quadroAcertos();sh['Acertos']=[['Mês','Gerado no mês (+ Alex deve à Dai)','Acertos (+ Dai pagou ao Alex)','Acumulado (+ Alex deve à Dai)']].concat(q.linhas.map(l=>[l.m,Math.round(l.ger*100)/100,Math.round(l.ac*100)/100,Math.round(l.acum*100)/100]));
+  const pm=porMes(all);const cs=[...new Set(all.map(e=>e.t))].filter(c=>c!=='Acerto').sort();
+  sh['Por categoria']=[['Mês',...cs]].concat(ms.map(m=>[m,...cs.map(c=>Math.round(((pm[m]&&pm[m].cats[c])||0)*100)/100)]));
+  const atual=S.fin;
+  for(const w of FIN_WS){S.fin=S.fins[w];const c=fcfg();const rows=[['Mês','Tipo','Nome','Valor','Pago','Detalhe']];
+    const mm=Object.keys(S.fin.meses).sort();for(const m of mm){for(const f of c.fontes){const v=fRec(m,f);if(v)rows.push([m,'Receita',f.nome,v,'',recItens(m,f).map(x=>x.nome+' '+x.v).join('; ')])}
+      for(const i of c.itens){const x=fComp(m,i);if(x.v)rows.push([m,'Compromisso · '+(i.tipo||''),i.nome,x.v,x.ok?'sim':'não',''])}const o=(S.fin.meses[m]||{}).obs;if(o)rows.push([m,'Anotação','',null,'',o])}
+    sh['Finanças '+FIN_NOME[w]]=rows}
+  S.fin=atual;
+  const al=[['Imóvel','Mês','Vencimento','Tipo','Descrição','Valor','Quem pagou','Data pgto']];
+  for(const im of acfg().imoveis){for(const k of Object.keys(S.alu.meses).filter(k=>k.startsWith(im.id+'_')).sort()){const m=k.slice(im.id.length+1);const d=S.alu.meses[k];
+    for(const x of d.itens||[])al.push([im.nome,m,d.venc||'','Item',x.nome,+x.v,'',''])
+    for(const p of d.pag||[])al.push([im.nome,m,d.venc||'','Pagamento','',+p.v,p.p,p.d||''])}}
+  sh['Aluguéis']=al;
+  sh['Configurações']=[['Chave','Valor (JSON)']].concat(Object.entries({categorias:cats(),metas:(S.cfg&&S.cfg.metas)||{},contasFixas:(S.cfg&&S.cfg.fixas)||FIXAS_PADRAO,renomes:(S.cfg&&S.cfg.renomes)||{},fornecedores:(S.cfg&&S.cfg.lugares)||{},imoveis:acfg().imoveis}).map(([k,v])=>[k,JSON.stringify(v)]));
+  return sh;
+}
+async function baixarExcel(){try{baixarArquivo(xlsxBlob(planilhasBackup()),'contas-casa-backup-'+today()+'.xlsx');toast('Backup em Excel baixado ✓')}catch(e){console.error(e);toast('Erro ao gerar o Excel.')}}
 async function importarHist(file){
   let data;try{data=JSON.parse(await file.text())}catch(e){toast('Arquivo inválido.');return}
+  if(data&&data.backup&&typeof data.backup==='object'){const ks=Object.keys(data.backup).filter(k=>/^[A-Za-z0-9_\-.~:@+]+(\/[A-Za-z0-9_\-.~:@+]+)+$/.test(k)&&k.split('/').length%2===0);let n=0;
+    try{for(const k of ks){await S.db.doc(k).set(data.backup[k]);n++;if(n%10===0||n===ks.length)toast('Restaurando… '+n+'/'+ks.length)}toast('Backup restaurado ✓ ('+n+' documentos)')}catch(e){dbErr(e)}return}
   if(data&&(data.fin||data.alu||data.finAlex)){let n=0;const tot=(data.fin?Object.keys(data.fin.meses).length+1:0)+(data.finAlex?Object.keys(data.finAlex.meses).length+1:0)+(data.alu?Object.keys(data.alu.meses).length+1:0);
     try{
       if(data.fin){await S.db.doc('cfg/fin').set(data.fin.cfg);n++;for(const [m,d] of Object.entries(data.fin.meses)){await S.db.doc('fin/'+m).set(d);n++;toast('Importando… '+n+'/'+tot)}}
@@ -418,12 +479,13 @@ async function setMe(nome){
 
 /* ===================== captura Apple Pay (#nfc-<centavos>-<loja>) ===================== */
 function readHash(){
+  try{const qs=new URLSearchParams(location.search);if(qs.has('v')||qs.has('l')){const v=parseVal(qs.get('v')||'');return {cents:isNaN(v)?0:Math.round(Math.abs(v)*100),raw:(qs.get('l')||'').replace(/\s+/g,' ').trim(),card:(qs.get('c')||'').trim()}}}catch(e){}
   const h=decodeURIComponent((location.hash||'').slice(1));
   const m=h.match(/^nfc-(\d+)(?:-(.*))?$/i);
   if(!m)return null;
   return {cents:+m[1],raw:(m[2]||'').replace(/[-_]+/g,' ').trim()};
 }
-function clearHash(){try{history.replaceState(null,'',location.pathname+location.search)}catch(e){try{location.hash=''}catch(_){}}}
+function clearHash(){try{history.replaceState(null,'',location.pathname)}catch(e){try{location.hash=''}catch(_){}}}
 function pendId(c){const slug=norm(c.raw).replace(/ /g,'-').slice(0,40)||'x';return 'p'+today().replace(/-/g,'')+'-'+c.cents+'-'+slug}
 let hashBusy=false;
 async function maybeHash(){
@@ -432,7 +494,7 @@ async function maybeHash(){
   hashBusy=true;clearHash();
   const id=pendId(c);
   if(S.tx.some(t=>t.pid===id)){toast('Esse pagamento já foi lançado.');hashBusy=false;return}
-  const p={v:c.cents/100,raw:c.raw,by:S.me,at:Date.now(),d:today()};
+  const p={v:c.cents/100,raw:c.raw,by:S.me,at:Date.now(),d:today()};if(c.card)p.cartao=c.card;
   if(!S.pend.some(x=>x._id===id)) await savePend(id,p);
   hashBusy=false;
   openForm({pend:{...p,_id:id}});
@@ -855,17 +917,17 @@ function viewAjustes(){
   const fx=(S.cfg&&S.cfg.fixas)||FIXAS_PADRAO;const url=APP_URL.startsWith('__')?'(link do app)':APP_URL;
   return `<div class="card set"><h4>Quem está usando este celular</h4><div class="seg">${['Dai','Alex'].map(p=>`<button class="${S.me===p?'on':''}" data-act="setme" data-p="${p}">${p}</button>`).join('')}</div><p>Os lançamentos e capturas deste aparelho entram como pagos por <b>${esc(S.me||'—')}</b>.</p></div>
   <div class="card set"><h4>📲 Captura automática do Apple Pay</h4>
-  <p>O iPhone não deixa sites lerem a Carteira, então usamos uma <b>Automação do app Atalhos</b>: a cada pagamento por aproximação ela abre este app com o valor e a loja, e você só confirma.</p>
+  <p>O iPhone não deixa sites lerem a Carteira, então usamos uma <b>Automação do app Atalhos</b> que abre este app a cada pagamento por aproximação, já com valor e loja.</p>
   <ol>
-   <li>Abra <b>Atalhos → Automação → Nova Automação → Transação</b>.</li>
-   <li>Escolha os cartões (pode marcar todos) e marque <b>Executar Imediatamente</b>. Toque em <b>Seguinte → Nova Automação em Branco</b>.</li>
-   <li>Adicione <b>Calcular</b>: <i>Quantia</i> × <code>100</code>, depois <b>Arredondar Número</b> (para inteiros).</li>
-   <li>Adicione <b>Substituir Texto</b>: em <i>Comerciante</i>, procure <code>[^A-Za-z0-9]+</code> e substitua por <code>-</code> (ative <i>Expressão Regular</i>).</li>
-   <li>Adicione <b>Texto</b> com: <code>${esc(url)}#nfc-</code>[Número Arredondado]<code>-</code>[Texto Atualizado]</li>
-   <li>Adicione <b>Abrir URLs</b> com esse Texto.</li>
+   <li>App <b>Atalhos</b> → aba <b>Automação</b> → <b>+</b> → <b>Carteira</b>.</li>
+   <li>Escolha os cartões, marque <b>Executar Imediatamente</b> e toque em <b>Seguinte</b> → <b>Criar Nova Automação</b> (atalho em branco).</li>
+   <li>Busque a ação <b>URL</b> e cole: <code>${esc(url)}?v=</code></li>
+   <li>Toque logo depois do <code>v=</code> → em cima do teclado, escolha a variável <b>Entrada do Atalho</b>; toque nela e troque para <b>Quantia</b>.</li>
+   <li>Digite <code>&amp;l=</code> e insira de novo <b>Entrada do Atalho</b>, trocando para <b>Comerciante</b>.</li>
+   <li>Adicione a ação <b>Abrir URLs</b> (ela usa a URL acima). Toque em <b>OK</b>.</li>
   </ol>
-  <p>Ao pagar, o app abre com o lançamento pronto (loja reconhecida, categoria e divisão sugeridas). <b>Aceitar</b> grava; <b>Depois</b> deixa na fila de revisão; <b>Recusar</b> descarta.</p>
-  <p>Link de teste: <span class="mono">${esc(url)}#nfc-15233-ZAFFARI-HIGIENOPOLIS</span></p>
+  <p>Na primeira vez, o link abre no <b>Safari</b> e pede login (o Safari e o ícone da Tela de Início guardam o login separadamente). Entre uma vez e escolha quem você é.</p>
+  <p><b>Teste o app sem pagar nada:</b> abra no Safari <span class="mono">${esc(url)}?v=15,23&amp;l=ZAFFARI HIGIENOPOLIS</span></p>
   <button class="btn ghost sm" data-act="simular">Simular uma captura agora</button></div>
   <div class="card set"><h4>Fornecedores (lugares)</h4><p>Junte nomes repetidos (ZAffari, Zaffari CG…), renomeie, defina categoria e divisão padrão de cada lugar e esconda das sugestões os que não se repetem.</p><button class="btn sm" data-act="lugares">Gerenciar fornecedores (${IDX?IDX.length:0})</button></div>
   ${viewMetas()}
@@ -879,6 +941,11 @@ function viewAjustes(){
   <div style="display:flex;gap:8px;margin-top:10px"><button class="btn light sm" data-act="fxadd">+ Conta</button><button class="btn sm" data-act="fxsave" style="flex:1">Salvar contas fixas</button></div></div>
   <div class="card set"><h4>Histórico da planilha</h4><p>${Object.keys(S.hist).length?`${Object.keys(S.hist).length} meses importados da planilha Contas Casa.`:'Ainda não importado. Escolha o arquivo <b>historico-contas-casa.json</b>.'}${S.fin.cfg||S.alu.cfg?' Finanças e aluguéis: importados.':' Para Finanças e Aluguéis, importe também <b>financas-e-alugueis.json</b>.'}</p>
   <label class="btn light sm" style="display:inline-block">${Object.keys(S.hist).length?'Reimportar':'Importar histórico'}<input type="file" id="fhist" style="display:none"></label></div>
+  <div class="card set"><h4>💾 Backup</h4><p>Baixe tudo em Excel (lançamentos, resumo mensal, acertos, finanças e aluguéis) ou receba por e-mail.</p>
+  <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn sm" data-act="bkxlsx">⬇️ Baixar Excel</button><button class="btn light sm" data-act="bkjson">⬇️ Cópia completa (JSON)</button>
+  <button class="btn light sm" data-act="bkmail">✉️ Enviar por e-mail agora</button></div>
+  <div class="fld"><label>Link do envio por e-mail (Apps Script)</label><div style="display:grid;grid-template-columns:1fr auto;gap:8px"><input class="inp" id="bkurl" placeholder="https://script.google.com/macros/s/…/exec?token=…" value="${esc((S.cfg&&S.cfg.backupUrl)||'')}" style="min-width:0"><button class="btn light sm" data-act="bkurlsave">Salvar</button></div>
+  <div class="hint">O envio automático todo dia 15 roda no Google, mesmo com o app fechado. O JSON serve para restaurar tudo em Ajustes → Importar.</div></div></div>
   <div class="card set"><h4>Conta</h4><p>${S.local?'Modo local (sem Firebase).':'Conectado como <b>'+esc(S.email||'')+'</b>. Lançamentos sincronizam entre os celulares de vocês.'}</p>${S.local?'':'<button class="btn light sm" data-act="logout">Sair</button>'}
   <p>${IDX?IDX.length:0} lugares conhecidos para sugestão · ${entries().length} lançamentos no total.</p></div>`;
 }
@@ -888,7 +955,7 @@ let F=null;
 function openForm(opts={}){
   const e=opts.edit;const p=opts.pend;
   F={id:e?e.id:null,isHist:e&&e.src==='planilha'&&e.id.startsWith('h:'),txId:null,
-     v:e?e.v:(p?p.v:(opts.v||'')),l:e?e.l:(opts.l||''),t:e?e.t:(opts.t||''),p:e?e.p:(p?p.by:(S.me||'Alex')),
+     v:e?e.v:(p?(p.v||''):(opts.v||'')),l:e?e.l:(opts.l||''),t:e?e.t:(opts.t||''),p:e?e.p:(p?p.by:(S.me||'Alex')),
      cd:e?+e.cd:(opts.cd??null),d:e?e.d:(p&&p.d?p.d:today()),pend:p||null,acerto:!!opts.acerto||!!(e&&e.t==='Acerto'),src:e?e.src:(p?'nfc':'manual'),autoT:!e,autoCd:!e&&opts.cd==null};
   if(e){F.sug=(IDX||[]).find(x=>x.k===norm(e.l))||true}
   if(e&&!F.isHist){F.txId=e.id}
@@ -912,7 +979,7 @@ function drawForm(focus){
   const title=F.acerto?(F.id?'Editar acerto':'Registrar acerto'):F.pend?'Pagamento por aproximação':F.id?'Editar lançamento':'Novo lançamento';
   sh.innerHTML=`<div class="grab"></div><h3>${title}<button class="btn light sm" data-act="close">Fechar</button></h3>
   ${!F.id&&!F.pend&&!F.acerto?`<button class="chip" data-act="virarAcerto" style="margin-bottom:10px">🔁 É um acerto entre Dai e Alex?</button>`:''}
-  ${F.pend?`<div class="capt">📲 Capturado do Apple Pay${F.pend.raw?': “'+esc(F.pend.raw)+'”':''} — confira e aceite.</div>`:''}
+  ${F.pend?`<div class="capt">📲 Capturado do Apple Pay${F.pend.raw?': “'+esc(F.pend.raw)+'”':''}${F.pend.cartao?' · '+esc(F.pend.cartao):''}${F.pend.v?'':' — a Carteira não informou o valor, digite acima'} — confira e aceite.</div>`:''}
   <div class="amt"><span>R$</span><input id="fv" inputmode="decimal" placeholder="0,00" value="${F.v===''?'':esc(typeof F.v==='number'?F.v.toFixed(2).replace('.',','):F.v)}"></div>
   ${F.acerto?`<p class="hint">Quem transferiu o dinheiro para o outro:</p>`:`
   <div class="fld"><label>Onde</label><input class="inp" id="fl" placeholder="Ex.: Zaffari, Gasolina, Ifood…" value="${esc(F.l)}" autocomplete="off" autocapitalize="words">
@@ -1364,6 +1431,10 @@ document.addEventListener('click',async ev=>{
     case 'catcancel':S.catDraft=null;render();break;
     case 'copy':copyMes();break;
     case 'logout':logout();break;
+    case 'bkxlsx':baixarExcel();break;
+    case 'bkjson':baixarJSON();break;
+    case 'bkmail':{const u=S.cfg&&S.cfg.backupUrl;if(!u){toast('Cole primeiro o link do Apps Script e salve.');break}const w=window.open(u,'_blank');if(!w)location.href=u;else toast('Abrindo o envio do backup…');break}
+    case 'bkurlsave':{const u=document.getElementById('bkurl').value.trim();if(u&&!/^https:\/\/script\.google\.com\//.test(u)){toast('O link deve começar com https://script.google.com/');break}await saveCfg({...(S.cfg||{}),backupUrl:u});toast('Link salvo ✓');break}
     case 'simular':location.hash='nfc-'+(1000+Math.floor(Math.random()*20000))+'-ZAFFARI-HIGIENOPOLIS';S.tab='mes';render();break;
     case 'fxadd':{const fx=readFixas();fx.push({nome:'Nova conta',t:'Outros',dia:10,v:0,cd:.5,chaves:''});S.cfg={...(S.cfg||{}),fixas:fx};render();break}
     case 'fxdel':{const fx=readFixas();fx.splice(+b.dataset.i,1);S.cfg={...(S.cfg||{}),fixas:fx};render();break}
