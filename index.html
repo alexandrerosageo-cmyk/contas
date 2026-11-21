@@ -1092,7 +1092,9 @@ function fcfg(){return S.fin.cfg||{titulo:'Finanças',inicio:ym(new Date()),sald
 function inRange(m,de,ate){return (!de||m>=de)&&(!ate||m<=ate)}
 function recItens(m,f){const d=S.fin.meses[m];const l=d&&d.recItens&&d.recItens[f.id];return Array.isArray(l)?l:[]}
 function fRec(m,f){const d=S.fin.meses[m];const it=recItens(m,f);if(it.length)return it.reduce((a,x)=>a+(+x.v||0),0);if(d&&d.rec&&d.rec[f.id]!=null)return +d.rec[f.id];return (+f.padrao&&inRange(m,f.de,f.ate))?+f.padrao:0}
-function fComp(m,i){const d=S.fin.meses[m];const c=d&&d.comp&&d.comp[i.id];if(c&&c.v!=null)return {v:+c.v,ok:!!c.ok,prev:false};return {v:(+i.padrao&&inRange(m,i.de,i.ate))?+i.padrao:0,ok:false,prev:true}}
+function fComp(m,i){const r=fCompRaw(m,i);if(i.tipo!=='Cartão')return r;const vinc=fcfg().itens.filter(j=>j.cartao===i.id&&j.id!==i.id);if(!vinc.length)return r;
+  const ded=vinc.reduce((a,j)=>a+fCompRaw(m,j).v,0);if(!ded)return r;return {...r,v:Math.max(0,Math.round((r.v-ded)*100)/100),bruto:r.v,ded,vinc:vinc.map(j=>({nome:j.nome,v:fCompRaw(m,j).v})).filter(x=>x.v)}}
+function fCompRaw(m,i){const d=S.fin.meses[m];const c=d&&d.comp&&d.comp[i.id];if(c&&c.v!=null)return {v:+c.v,ok:!!c.ok,prev:false};return {v:(+i.padrao&&inRange(m,i.de,i.ate))?+i.padrao:0,ok:false,prev:true}}
 function finMes(m){const c=fcfg();let rec=0,comp=0,pago=0;for(const f of c.fontes)rec+=fRec(m,f);for(const i of c.itens){const x=fComp(m,i);comp+=x.v;if(x.ok)pago+=x.v}return{rec,comp,pago,aberto:comp-pago}}
 function finSaldos(ate){const c=fcfg();const ac=c.acumula!==false;const out={};let s=+c.saldoInicial||0;let m=c.inicio||ym(new Date());let k=0;while(m<=ate&&k++<360){const r=finMes(m);const ini=ac?s:0;s=ini+r.rec-r.comp;out[m]={ini,fim:s,...r,ac};m=addMes(m,1)}return out}
 function finHorizonte(){let h=addMes(ym(new Date()),36);for(const k of Object.keys(S.fin.meses))if(k>h)h=k;for(const i of fcfg().itens)if(i.ate&&i.ate>h)h=i.ate;return h}
@@ -1152,7 +1154,7 @@ function viewFinW(){
   for(const [t,xs] of Object.entries(grupos)){
     h+=`<div class="day">${FIN_EMO[t]||'•'} ${esc(t)} · ${brl(xs.reduce((a,x)=>a+x.v,0))}</div><div class="list">`+xs.map(x=>`<div class="it" style="padding:10px 12px">
       <button data-act="fok" data-id="${esc(x.i.id)}" aria-label="Marcar como pago" style="width:34px;height:34px;border-radius:50%;border:2px solid ${x.ok?'#1f6b45':'#d6d3cb'};background:${x.ok?'#1f6b45':'#fff'};color:#fff;font-weight:800;flex:0 0 auto" ${x.v?'':'disabled'}>${x.ok?'✓':''}</button>
-      <button data-act="fval" data-k="comp" data-id="${esc(x.i.id)}" style="all:unset;flex:1;display:flex;align-items:center;gap:10px;cursor:pointer;min-width:0"><div class="x"><b style="${x.ok?'text-decoration:line-through;color:var(--mute)':''}">${esc(x.i.nome)}</b><small>${x.i.dia?'vence dia '+x.i.dia+' · ':''}${x.ok?'pago':x.prev&&x.v?'previsto':x.v?'a pagar':'—'}</small></div><div class="v">${brl(x.v)}</div></button></div>`).join('')+`</div>`;
+      <button data-act="fval" data-k="comp" data-id="${esc(x.i.id)}" style="all:unset;flex:1;display:flex;align-items:center;gap:10px;cursor:pointer;min-width:0"><div class="x"><b style="${x.ok?'text-decoration:line-through;color:var(--mute)':''}">${esc(x.i.nome)}</b><small>${x.i.dia?'vence dia '+x.i.dia+' · ':''}${x.ok?'pago':x.prev&&x.v?'previsto':x.v?'a pagar':'—'}${x.i.cartao?' · 💳 '+esc((c.itens.find(k=>k.id===x.i.cartao)||{}).nome||'cartão'):''}${x.ded?`<br>fatura ${brl(x.bruto)} − ${x.vinc.map(y=>esc(y.nome)).join(', ')} ${brl(x.ded)}`:''}</small></div><div class="v">${brl(x.v)}</div></button></div>`).join('')+`</div>`;
   }
   h+=`<button class="btn sm" data-act="fnovo" data-k="comp" style="margin-top:10px;margin-right:6px">+ Compromisso (à vista ou parcelado)</button>`;
   if(ocultos)h+=`<button class="btn light sm" data-act="fall" style="margin-top:8px">${S.fall?'Esconder itens sem valor':'Mostrar todos ('+ocultos+' sem valor neste mês)'}</button>`;
@@ -1179,13 +1181,14 @@ function abrirNovoFin(kind){
   ${kind==='comp'?`<div class="fld"><label>Tipo</label><div class="chips">${FIN_TIPOS.map((t,i)=>`<button class="chip ${i===0?'on':''}" data-act="fntipo" data-t="${t}">${FIN_EMO[t]||''} ${t}</button>`).join('')}</div></div>
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px"><div class="fld"><label>Vence dia</label><input class="inp" id="fnd" inputmode="numeric" placeholder="opcional"></div><div class="fld"><label>Nº de parcelas</label><input class="inp" id="fnp" inputmode="numeric" value="1"></div></div>
   <div class="fld"><label>O valor acima é</label><div class="seg">${[['parcela','Valor de cada parcela'],['total','Valor total']].map(([k,t],i)=>`<button class="${i===0?'on':''}" data-act="fnmodo" data-m="${k}" style="padding:9px 4px;font-size:13px">${t}</button>`).join('')}</div></div>
+  ${fcfg().itens.some(x=>x.tipo==='Cartão')?`<div class="fld" id="fncardbox"><label>Pago com cartão?</label><select class="inp" id="fncard"><option value="">Não (boleto, débito, pix…)</option>${fcfg().itens.filter(x=>x.tipo==='Cartão').map(x=>`<option value="${esc(x.id)}">💳 ${esc(x.nome)}</option>`).join('')}</select><div class="hint">O valor de cada parcela sai da fatura desse cartão, para não contar duas vezes.</div></div>`:''}
   <label class="fld" style="display:flex;gap:10px;align-items:center;font-weight:600"><input type="checkbox" id="fnok" style="width:20px;height:20px;accent-color:var(--acc)"> A parcela deste mês já está paga</label>`
   :`<div class="fld"><label>Repetir por quantos meses</label><input class="inp" id="fnp" inputmode="numeric" value="1"></div>`}
   <div class="hint" id="fninfo"></div>
   <div class="actions"><button class="btn" data-act="fnovosave">Lançar</button></div>`;
   S.fnTipo=FIN_TIPOS[0];S.fnModo='parcela';
   document.getElementById('scrim').classList.add('on');sh.classList.add('on');
-  const upd=()=>{const v=parseVal(document.getElementById('fnv').value)||0;const n=Math.max(1,parseInt(document.getElementById('fnp').value)||1);const pl=planoNovoFin(v,n);
+  const upd=()=>{if(!document.getElementById('fnv')||!document.getElementById('fninfo'))return;const v=parseVal(document.getElementById('fnv').value)||0;const n=Math.max(1,parseInt(document.getElementById('fnp').value)||1);const pl=planoNovoFin(v,n);
     document.getElementById('fninfo').innerHTML=n>1?`${n} ${kind==='rec'?'meses':'parcelas'} de <b>${brl(pl.vals[n-1])}</b>${pl.vals[0]!==pl.vals[n-1]?` (1ª de ${brl(pl.vals[0])})`:''} = total <b>${brl(pl.total)}</b>, de ${mesLabel(S.fmes)} até ${mesLabel(addMes(S.fmes,n-1))}.`:'Só neste mês.'};S.fnUpd=upd;
   sh.oninput=upd;upd();setTimeout(()=>document.getElementById('fnv').focus(),250);
 }
@@ -1198,10 +1201,12 @@ async function salvarNovoFin(){
   const n=Math.min(240,Math.max(1,parseInt(document.getElementById('fnp').value)||1));const pl=planoNovoFin(v,n);
   const c=JSON.parse(JSON.stringify(fcfg()));const lista=kind==='rec'?c.fontes:c.itens;
   let it=lista.find(x=>norm(x.nome)===norm(nome));
-  if(!it){it={id:(kind==='rec'?'f':'i')+Date.now(),nome};if(kind==='comp'){it.tipo=S.fnTipo;const dia=parseInt((document.getElementById('fnd')||{}).value);if(dia)it.dia=dia}lista.push(it)}
+  const cardSel=(document.getElementById('fncard')||{}).value||'';let mudouCfg=false;
+  if(!it){it={id:(kind==='rec'?'f':'i')+Date.now(),nome};if(kind==='comp'){it.tipo=S.fnTipo;const dia=parseInt((document.getElementById('fnd')||{}).value);if(dia)it.dia=dia}lista.push(it);mudouCfg=true}
+  if(kind==='comp'&&cardSel&&it.tipo!=='Cartão'&&it.cartao!==cardSel){it.cartao=cardSel;mudouCfg=true}
   const ok=kind==='comp'&&document.getElementById('fnok').checked;
   try{
-    if(!S.fin.cfg||lista.length!==(kind==='rec'?fcfg().fontes:fcfg().itens).length){if(!c.inicio)c.inicio=S.fmes;await S.db.doc(finCfgW(S.fw)).set(c);S.fin.cfg=c}
+    if(!S.fin.cfg||mudouCfg){if(!c.inicio)c.inicio=S.fmes;await S.db.doc(finCfgW(S.fw)).set(c);S.fin.cfg=c}
     for(let k=0;k<n;k++){const m=addMes(S.fmes,k);const d=JSON.parse(JSON.stringify(S.fin.meses[m]||{}));
       if(kind==='rec'){const atual=fRec(m,it);d.rec=d.rec||{};const its=(d.recItens||{})[it.id];if(Array.isArray(its)&&its.length){its.push({nome:'Avulso',v:pl.vals[k]});d.rec[it.id]=its.reduce((a,x)=>a+(+x.v||0),0)}else d.rec[it.id]=Math.round((atual+pl.vals[k])*100)/100}
       else{const atual=fComp(m,it);d.comp=d.comp||{};d.comp[it.id]={v:Math.round(((atual.v||0)+pl.vals[k])*100)/100,ok:(k===0?ok:false)&&!(atual.v>0&&!atual.ok)}}
@@ -1211,7 +1216,7 @@ async function salvarNovoFin(){
 }
 function abrirFinVal(kind,id){
   const c=fcfg();const m=S.fmes;const it=(kind==='rec'?c.fontes:c.itens).find(x=>x.id===id);if(!it)return;
-  const v=kind==='rec'?fRec(m,it):fComp(m,it).v;const ok=kind==='comp'&&fComp(m,it).ok;S.fv={kind,id};
+  const v=kind==='rec'?fRec(m,it):fCompRaw(m,it).v;const ok=kind==='comp'&&fCompRaw(m,it).ok;S.fv={kind,id};const cartoes=kind==='comp'&&it.tipo!=='Cartão'?fcfg().itens.filter(x=>x.tipo==='Cartão'):[];const liq=kind==='comp'&&it.tipo==='Cartão'?fComp(m,it):null;
   const sh=document.getElementById('sheet');
   sh.innerHTML=`<div class="grab"></div><h3>${esc(it.nome)}<button class="btn light sm" data-act="close">Fechar</button></h3><p class="hint">${mesLabel(m)} · ${kind==='rec'?'receita':esc(it.tipo||'compromisso')}</p>
   <div class="amt"><span>R$</span><input id="fvv" inputmode="decimal" value="${v?v.toFixed(2).replace('.',','):''}" placeholder="0,00"></div>
@@ -1219,6 +1224,8 @@ function abrirFinVal(kind,id){
     return `<div class="fld"><label>Detalhar por cliente (opcional)</label><div id="fclis">${its.map(x=>cliRow(x.nome,x.v)).join('')}</div>
     <datalist id="fclinomes">${nomes.map(n=>`<option value="${esc(n)}">`).join('')}</datalist>
     <button class="btn light sm" data-act="fcliadd" style="margin-top:6px">+ Cliente</button><div class="hint" id="fclitot">${its.length?'O total da receita é a soma dos clientes.':'Ex.: Marcenaria → Janete, Daniel… O total vira a soma.'}</div></div>`})():''}
+  ${liq&&liq.ded?`<div class="capt" style="background:#e7f0fb;color:#2a5aa8">💳 Digite a <b>fatura total</b> do cartão. Desse valor saem os compromissos pagos com ele: ${liq.vinc.map(x=>esc(x.nome)+' '+brl(x.v)).join(', ')} → fica <b>${brl(liq.v)}</b>.</div>`:''}
+  ${cartoes.length?`<div class="fld"><label>Pago com cartão?</label><select class="inp" id="fvcard"><option value="">Não (boleto, débito, pix…)</option>${cartoes.map(x=>`<option value="${esc(x.id)}" ${it.cartao===x.id?'selected':''}>💳 ${esc(x.nome)}</option>`).join('')}</select><div class="hint">Se sim, o valor sai da fatura desse cartão para não contar duas vezes (vale para todos os meses deste compromisso).</div></div>`:''}
   ${kind==='comp'?`<label class="fld" style="display:flex;gap:10px;align-items:center;font-weight:600"><input type="checkbox" id="fvok" ${ok?'checked':''} style="width:20px;height:20px;accent-color:var(--acc)"> Já está pago</label>`:''}
   <div class="fld"><label>Repetir este valor nos próximos meses</label><input class="inp" id="fvrep" inputmode="numeric" placeholder="0 = só este mês"></div>
   <div class="actions" id="fvacts"><button class="btn bad" data-act="fdel">Excluir</button><button class="btn" data-act="fvalsave">Salvar</button></div>`;
@@ -1257,9 +1264,10 @@ async function salvarFinVal(){
   try{for(let k=0;k<=rep;k++){const m=addMes(S.fmes,k);const d=JSON.parse(JSON.stringify(S.fin.meses[m]||{}));
     if(kind==='rec'){d.rec=d.rec||{};d.rec[id]=val;d.recItens=d.recItens||{};if(clis.length)d.recItens[id]=clis.map(x=>({...x}));else delete d.recItens[id]}else{d.comp=d.comp||{};d.comp[id]={v:val,ok:k===0?ok:false}}
     await S.db.doc(finColW(S.fw)+'/'+m).set(d);S.fin.meses[m]=d}
+    const sel=document.getElementById('fvcard');if(sel&&kind==='comp'){const c=JSON.parse(JSON.stringify(fcfg()));const it=c.itens.find(x=>x.id===id);if(it&&(it.cartao||'')!==sel.value){if(sel.value)it.cartao=sel.value;else delete it.cartao;await S.db.doc(finCfgW(S.fw)).set(c);S.fin.cfg=c}}
     closeSheet();toast('Salvo ✓');render()}catch(e){dbErr(e)}
 }
-async function toggleFinOk(id){const m=S.fmes;const it=fcfg().itens.find(x=>x.id===id);if(!it)return;const x=fComp(m,it);if(!x.v)return;
+async function toggleFinOk(id){const m=S.fmes;const it=fcfg().itens.find(x=>x.id===id);if(!it)return;const x=fCompRaw(m,it);if(!x.v)return;
   const d=JSON.parse(JSON.stringify(S.fin.meses[m]||{}));d.comp=d.comp||{};d.comp[id]={v:x.v,ok:!x.ok};S.fin.meses[m]=d;render();
   try{await S.db.doc(finColW(S.fw)+'/'+m).set(d)}catch(e){dbErr(e)}}
 function abrirFinObs(){const d=S.fin.meses[S.fmes]||{};const sh=document.getElementById('sheet');
@@ -1450,7 +1458,7 @@ document.addEventListener('click',async ev=>{
     case 'fnovo':abrirNovoFin(b.dataset.k);break;
     case 'fnovosave':salvarNovoFin();break;
     case 'fnmodo':S.fnModo=b.dataset.m;document.querySelectorAll('[data-act=fnmodo]').forEach(x=>x.classList.toggle('on',x.dataset.m===S.fnModo));S.fnUpd&&S.fnUpd();break;
-    case 'fntipo':S.fnTipo=b.dataset.t;document.querySelectorAll('[data-act=fntipo]').forEach(x=>x.classList.toggle('on',x.dataset.t===S.fnTipo));break;
+    case 'fntipo':S.fnTipo=b.dataset.t;{const cb=document.getElementById('fncardbox');if(cb)cb.style.display=S.fnTipo==='Cartão'?'none':''}document.querySelectorAll('[data-act=fntipo]').forEach(x=>x.classList.toggle('on',x.dataset.t===S.fnTipo));break;
     case 'fcliadd':{document.getElementById('fclis').insertAdjacentHTML('beforeend',cliRow('',''));const l=document.querySelectorAll('.fcli [data-k=n]');l[l.length-1].focus();break}
     case 'fclidel':{b.closest('.fcli').remove();atualizaCliTot();break}
     case 'fok':toggleFinOk(b.dataset.id);break;
