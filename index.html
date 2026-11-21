@@ -588,7 +588,7 @@ function viewMes(){
     if(e.d!==lastD){if(open)h+='</div>';h+=`<div class="day">${dLabel(e.d)}</div><div class="list">`;open=true;lastD=e.d}
     const cd=+e.cd;
     h+=`<button class="it" data-act="edit" data-id="${esc(e.id)}"><div class="ic">${emo(e.t)}</div>
-      <div class="x"><b>${esc(e.l)}${e.src==='nfc'?'<span class="tag">aprox.</span>':''}</b><small><span class="dot" style="background:${cor(e.p)}"></span>${esc(e.p)} pagou · ${esc(e.t)}</small></div>
+      <div class="x"><b>${esc(e.l)}${e.parc?`<span class="tag" style="background:#e7f0fb;color:#2a5aa8">${e.parc.i}/${e.parc.n}</span>`:''}${e.src==='nfc'?'<span class="tag">aprox.</span>':''}</b><small><span class="dot" style="background:${cor(e.p)}"></span>${esc(e.p)} pagou · ${esc(e.t)}</small></div>
       <div class="v">${brl(e.v)}<small style="color:var(--ink2)">${e.t==='Acerto'?'acerto':'Dai '+pct(cd)+' · Alex '+pct(1-cd)}</small></div></button>`;
   }
   if(open)h+='</div>';
@@ -866,7 +866,7 @@ function viewBusca(){
   let cur=null,open=false;
   for(const e of res){
     if(e.mes!==cur){if(open)h+='</div>';h+=`<div class="day" style="display:flex;justify-content:space-between"><span>${mesLabel(e.mes)}</span><span>${brl(porM[e.mes])}</span></div><div class="list">`;open=true;cur=e.mes}
-    h+=`<button class="it" data-act="edit" data-id="${esc(e.id)}"><div class="ic">${emo(e.t)}</div><div class="x"><b>${esc(e.l)}</b><small><span class="dot" style="background:${cor(e.p)}"></span>${esc(e.p)} · ${e.d.split('-').reverse().slice(0,2).join('/')} · ${esc(e.t)}</small></div><div class="v">${brl(e.v)}</div></button>`;
+    h+=`<button class="it" data-act="edit" data-id="${esc(e.id)}"><div class="ic">${emo(e.t)}</div><div class="x"><b>${esc(e.l)}${e.parc?` <small style="color:#2a5aa8">(${e.parc.i}/${e.parc.n})</small>`:''}</b><small><span class="dot" style="background:${cor(e.p)}"></span>${esc(e.p)} · ${e.d.split('-').reverse().slice(0,2).join('/')} · ${esc(e.t)}</small></div><div class="v">${brl(e.v)}</div></button>`;
   }
   if(open)h+='</div>';
   return h;
@@ -978,6 +978,7 @@ function drawForm(focus){
   const lastInfo=F.sug&&F.sug.last&&!F.id?`Última vez: ${brl(F.sug.last.v)} em ${F.sug.last.d.split('-').reverse().join('/')} · média ${brl(F.sug.vals.reduce((a,b)=>a+b,0)/F.sug.vals.length)}`:'';
   const title=F.acerto?(F.id?'Editar acerto':'Registrar acerto'):F.pend?'Pagamento por aproximação':F.id?'Editar lançamento':'Novo lançamento';
   sh.innerHTML=`<div class="grab"></div><h3>${title}<button class="btn light sm" data-act="close">Fechar</button></h3>
+  ${F.txId&&(S.tx.find(t=>t._id===F.txId)||{}).parc?(()=>{const pc=S.tx.find(t=>t._id===F.txId).parc;return `<div class="capt" style="background:#e7f0fb;color:#2a5aa8">💳 Parcela ${pc.i} de ${pc.n} · total da compra ${brl(pc.total||0)}. Alterar aqui muda só esta parcela.</div>`})():''}
   ${!F.id&&!F.pend&&!F.acerto?`<button class="chip" data-act="virarAcerto" style="margin-bottom:10px">🔁 É um acerto entre Dai e Alex?</button>`:''}
   ${F.pend?`<div class="capt">📲 Capturado do Apple Pay${F.pend.raw?': “'+esc(F.pend.raw)+'”':''}${F.pend.cartao?' · '+esc(F.pend.cartao):''}${F.pend.v?'':' — a Carteira não informou o valor, digite acima'} — confira e aceite.</div>`:''}
   <div class="amt"><span>R$</span><input id="fv" inputmode="decimal" placeholder="0,00" value="${F.v===''?'':esc(typeof F.v==='number'?F.v.toFixed(2).replace('.',','):F.v)}"></div>
@@ -995,7 +996,11 @@ function drawForm(focus){
    <div class="splitlbl"><span>Dai ${pct(cd)} · ${brl(v*cd)}</span><span>Alex ${pct(1-cd)} · ${brl(v*(1-cd))}</span></div>
    <input type="range" min="0" max="100" step="5" value="${Math.round(cd*100)}" id="fcd" aria-label="Percentual da Dai"></div>`}
   <div class="fld"><label>Data</label><input class="inp" type="date" id="fd" value="${F.d}"></div>
-  ${!F.id&&!F.pend&&!F.acerto?`<div class="fld"><button class="chip ${F.retroOn?'on':''}" data-act="retro" style="width:100%;text-align:left;border-radius:12px;padding:11px 12px">${F.retroOn?'✓':'↺'} Lançar também nos meses anteriores</button>
+  ${!F.id&&!F.acerto?`<div class="fld"><button class="chip ${F.parcOn?'on':''}" data-act="parc" style="width:100%;text-align:left;border-radius:12px;padding:11px 12px">${F.parcOn?'✓':'💳'} Compra parcelada</button>
+   ${F.parcOn?`<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px"><div><span class="hint" style="margin:0">Nº de parcelas</span><input class="inp" id="fpn" inputmode="numeric" value="${F.parcN||''}" placeholder="ex.: 10"></div>
+   <div><span class="hint" style="margin:0">O valor acima é</span><div class="seg" style="margin-top:2px">${[['total','Total'],['parcela','Parcela']].map(([k,t])=>`<button class="${(F.parcModo||'total')===k?'on':''}" data-act="parcmodo" data-m="${k}" style="padding:9px 4px">${t}</button>`).join('')}</div></div></div>
+   <div class="hint" id="fparcinfo">${parcInfo()}</div>`:''}</div>`:''}
+  ${!F.id&&!F.pend&&!F.acerto&&!F.parcOn?`<div class="fld"><button class="chip ${F.retroOn?'on':''}" data-act="retro" style="width:100%;text-align:left;border-radius:12px;padding:11px 12px">${F.retroOn?'✓':'↺'} Lançar também nos meses anteriores</button>
    ${F.retroOn?`<div style="display:grid;grid-template-columns:auto 1fr;gap:8px;align-items:center;margin-top:8px"><span class="hint" style="margin:0">desde</span><input class="inp" type="month" id="fretro" value="${F.retroDe||addMes((F.d||today()).slice(0,7),-1)}" style="min-width:0"></div><div class="hint" id="fretroinfo">${retroInfo()}</div>`:''}</div>`:''}
   <div class="actions">${F.pend?`<button class="btn bad" data-act="recusar">Recusar</button><button class="btn light" data-act="close">Depois</button><button class="btn" data-act="salvar">Aceitar</button>`:
    F.id?`<button class="btn bad" data-act="excluir">Excluir</button><button class="btn" data-act="salvar">Salvar</button>`:`<button class="btn" data-act="salvar">Lançar</button>`}</div>`;
@@ -1003,6 +1008,7 @@ function drawForm(focus){
   const fl=document.getElementById('fl');if(fl){fl.oninput=()=>{F.l=fl.value;F.sug=null;const pos=fl.selectionStart;drawForm(false);const n=document.getElementById('fl');n.focus();try{n.setSelectionRange(pos,pos)}catch(e){}}}
   const fcd=document.getElementById('fcd');if(fcd)fcd.oninput=()=>{F.cd=fcd.value/100;F.autoCd=false;updSplit(true)};
   document.getElementById('fd').onchange=e=>{F.d=e.target.value;const i=document.getElementById('fretroinfo');if(i)i.innerHTML=retroInfo()};
+  const fpn=document.getElementById('fpn');if(fpn){fpn.oninput=()=>{F.parcN=fpn.value;document.getElementById('fparcinfo').innerHTML=parcInfo()};fv.addEventListener('input',()=>{const i=document.getElementById('fparcinfo');if(i)i.innerHTML=parcInfo()})}
   const fr=document.getElementById('fretro');if(fr)fr.onchange=()=>{F.retroDe=fr.value;document.getElementById('fretroinfo').innerHTML=retroInfo()};
   if(document.getElementById('fretroinfo')){const upd=()=>{const i=document.getElementById('fretroinfo');if(i)i.innerHTML=retroInfo()};fv.addEventListener('input',upd)}
   if(focus)setTimeout(()=>fv.focus(),280);
@@ -1014,6 +1020,15 @@ function updSplit(chips){
   if(chips)document.querySelectorAll('[data-act=cd]').forEach(b=>b.classList.toggle('on',Math.abs(cd-+b.dataset.x)<.001));
 }
 function closeSheet(){document.getElementById('scrim').classList.remove('on');document.getElementById('sheet').classList.remove('on');F=null}
+function parcPlano(){
+  if(!F||!F.parcOn)return null;const n=Math.min(72,Math.max(0,parseInt(F.parcN)||0));const v=parseVal(F.v);if(n<2||!(v>0))return null;
+  const modo=F.parcModo||'total';const total=modo==='total'?Math.round(v*100)/100:Math.round(v*n*100)/100;
+  const base=Math.floor(total/n*100)/100;const vals=Array(n).fill(base);vals[0]=Math.round((total-base*(n-1))*100)/100;
+  const d=F.d||today();const dia=+d.slice(8,10);const datas=vals.map((_,k)=>{const mm=addMes(d.slice(0,7),k);const [yy,mo]=mm.split('-').map(Number);const ult=new Date(yy,mo,0).getDate();return mm+'-'+String(Math.min(dia,ult)).padStart(2,'0')});
+  return {n,total,vals,datas};
+}
+function parcInfo(){const pl=parcPlano();if(!pl)return 'Informe o valor e o número de parcelas (2 ou mais).';
+  return `${pl.n}× de <b>${brl(pl.vals[pl.n-1])}</b>${pl.vals[0]!==pl.vals[pl.n-1]?` (1ª de ${brl(pl.vals[0])})`:''} = total <b>${brl(pl.total)}</b> · de ${mesLabel(pl.datas[0].slice(0,7))} até ${mesLabel(pl.datas[pl.n-1].slice(0,7))}. Cada parcela entra no seu mês, com a mesma divisão.`}
 function retroPlano(){
   if(!F||!F.retroOn)return {meses:[],pular:[]};const d=F.d||today();const ate=addMes(d.slice(0,7),-1);const de=F.retroDe||ate;
   if(de>ate)return {meses:[],pular:[]};const todos=mesesEntre(de,ate).slice(-36);const nl=norm(F.l);const all=entries();
@@ -1027,11 +1042,12 @@ async function salvar(){
   if(!(v>0)){toast('Informe o valor.');return}
   if(!F.acerto&&!F.l.trim()){toast('Informe onde foi o gasto.');return}
     const d=F.d||today();
+  if(F.parcOn&&!F.id&&!F.acerto){const pl=parcPlano();if(!pl){toast('Informe o número de parcelas (2 ou mais).');return}return salvarParcelado(pl)}
   const data={d,mes:d.slice(0,7),v:Math.round(v*100)/100,p:F.p,l:F.acerto?('Acerto '+F.p+' → '+outro(F.p)):F.l.trim(),t:F.acerto?'Acerto':F.t,cd:F.acerto?(F.p==='Alex'?1:0):Math.round(F.cd*1000)/1000,src:F.src||'manual',by:S.me||'',at:Date.now()};
   if(F.pend)data.pid=F.pend._id;
   try{
     if(F.isHist&&!F.txId){const[,mes,i]=F.id.split(':');data.ref=F.id;await saveTx('o-'+mes+'-'+i,data)}
-    else if(F.txId){const old=S.tx.find(t=>t._id===F.txId);if(old&&old.ref)data.ref=old.ref;await saveTx(F.txId,data)}
+    else if(F.txId){const old=S.tx.find(t=>t._id===F.txId);if(old&&old.ref)data.ref=old.ref;if(old&&old.parc)data.parc=old.parc;await saveTx(F.txId,data)}
     else await saveTx(null,data);
     if(F.pend)await delPend(F.pend._id);
     const plano=(!F.id&&!F.pend&&!F.acerto)?retroPlano().meses:[];let n=0;
@@ -1040,7 +1056,16 @@ async function salvar(){
     const m=data.mes;closeSheet();if(m!==S.mes){S.mes=m}render();toast(n?`Salvo ✓ + ${n} ${n>1?'meses anteriores':'mês anterior'}`:'Salvo ✓');
   }catch(e){}
 }
+async function salvarParcelado(pl){
+  const g='g'+Date.now().toString(36);const base={p:F.p,l:F.l.trim(),t:F.t,cd:Math.round(F.cd*1000)/1000,src:F.pend?'nfc':(F.src||'manual'),by:S.me||''};
+  try{for(let k=0;k<pl.n;k++){const data={...base,d:pl.datas[k],mes:pl.datas[k].slice(0,7),v:pl.vals[k],parc:{i:k+1,n:pl.n,g,total:pl.total},at:Date.now()};if(k===0&&F.pend)data.pid=F.pend._id;
+      await saveTx(null,data);if(pl.n>3)toast('Lançando parcelas… '+(k+1)+'/'+pl.n)}
+    if(F.pend)await delPend(F.pend._id);const m=pl.datas[0].slice(0,7);closeSheet();S.mes=m;render();toast(`Parcelado ✓ ${pl.n}× de ${brl(pl.vals[pl.n-1])}`);
+  }catch(e){}
+}
 async function excluir(){
+  if(F&&F.txId){const old=S.tx.find(t=>t._id===F.txId);if(old&&old.parc&&old.parc.g){const b0=document.querySelector('[data-act=excluir]');
+    if(!b0.dataset.c){b0.dataset.c=1;const box=b0.parentElement;box.innerHTML=`<button class="btn bad" data-act="exparc" data-modo="uma">Só esta parcela</button><button class="btn bad" data-act="exparc" data-modo="prox">Esta e as próximas</button>`;return}}}
   if(!F||!F.id)return;const b=document.querySelector('[data-act=excluir]');
   if(!b.dataset.c){b.dataset.c=1;b.textContent='Confirmar exclusão';return}
   try{
@@ -1381,6 +1406,10 @@ document.addEventListener('click',async ev=>{
     case 'smtoggle':S.smOpen=!S.smOpen;render();break;
     case 'gofin':S.tab='fin';S.fw=S.me==='Dai'?'dai':'alex';S.fmes=S.mes;render();window.scrollTo(0,0);toast(b.title||'');break;
     case 'retro':F.retroOn=!F.retroOn;drawForm(false);break;
+    case 'parc':F.parcOn=!F.parcOn;if(F.parcOn)F.retroOn=false;drawForm(false);if(F.parcOn)setTimeout(()=>document.getElementById('fpn')?.focus(),50);break;
+    case 'parcmodo':F.parcModo=b.dataset.m;drawForm(false);break;
+    case 'exparc':{const old=S.tx.find(t=>t._id===F.txId);if(!old)break;const alvo=b.dataset.modo==='uma'?[old]:S.tx.filter(t=>t.parc&&t.parc.g===old.parc.g&&t.parc.i>=old.parc.i);
+      try{for(const t of alvo)await delTx(t._id);closeSheet();toast(alvo.length>1?`${alvo.length} parcelas excluídas`:'Parcela excluída')}catch(e){}break}
     case 'fw':S.fw=b.dataset.w;S.fall=false;render();window.scrollTo(0,0);break;
     case 'fprev':S.fmes=addMes(S.fmes,-1);render();break;
     case 'fnext':S.fmes=addMes(S.fmes,1);render();break;
