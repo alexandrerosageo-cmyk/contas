@@ -1154,7 +1154,7 @@ function viewFinW(){
       <button data-act="fok" data-id="${esc(x.i.id)}" aria-label="Marcar como pago" style="width:34px;height:34px;border-radius:50%;border:2px solid ${x.ok?'#1f6b45':'#d6d3cb'};background:${x.ok?'#1f6b45':'#fff'};color:#fff;font-weight:800;flex:0 0 auto" ${x.v?'':'disabled'}>${x.ok?'✓':''}</button>
       <button data-act="fval" data-k="comp" data-id="${esc(x.i.id)}" style="all:unset;flex:1;display:flex;align-items:center;gap:10px;cursor:pointer;min-width:0"><div class="x"><b style="${x.ok?'text-decoration:line-through;color:var(--mute)':''}">${esc(x.i.nome)}</b><small>${x.i.dia?'vence dia '+x.i.dia+' · ':''}${x.ok?'pago':x.prev&&x.v?'previsto':x.v?'a pagar':'—'}</small></div><div class="v">${brl(x.v)}</div></button></div>`).join('')+`</div>`;
   }
-  h+=`<button class="btn sm" data-act="fnovo" data-k="comp" style="margin-top:10px;margin-right:6px">+ Compromisso</button>`;
+  h+=`<button class="btn sm" data-act="fnovo" data-k="comp" style="margin-top:10px;margin-right:6px">+ Compromisso (à vista ou parcelado)</button>`;
   if(ocultos)h+=`<button class="btn light sm" data-act="fall" style="margin-top:8px">${S.fall?'Esconder itens sem valor':'Mostrar todos ('+ocultos+' sem valor neste mês)'}</button>`;
   // empréstimos e dívidas
   const fut=[];let m2=m;const meses=[];while(m2<=H){meses.push(m2);m2=addMes(m2,1)}
@@ -1178,20 +1178,24 @@ function abrirNovoFin(kind){
   <div class="fld"><label>${kind==='rec'?'Nome da receita':'Descrição'}</label><input class="inp" id="fnn" list="fnnomes" placeholder="${kind==='rec'?'Ex.: Marcenaria, Aulas particulares':'Ex.: Empréstimo Caixa, Conserto carro, IPVA'}" autocomplete="off"><datalist id="fnnomes">${lista.map(x=>`<option value="${esc(x.nome)}">`).join('')}</datalist><div class="hint">Se já existir com esse nome, o valor é <b>somado</b> ao daquele mês.</div></div>
   ${kind==='comp'?`<div class="fld"><label>Tipo</label><div class="chips">${FIN_TIPOS.map((t,i)=>`<button class="chip ${i===0?'on':''}" data-act="fntipo" data-t="${t}">${FIN_EMO[t]||''} ${t}</button>`).join('')}</div></div>
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px"><div class="fld"><label>Vence dia</label><input class="inp" id="fnd" inputmode="numeric" placeholder="opcional"></div><div class="fld"><label>Nº de parcelas</label><input class="inp" id="fnp" inputmode="numeric" value="1"></div></div>
+  <div class="fld"><label>O valor acima é</label><div class="seg">${[['parcela','Valor de cada parcela'],['total','Valor total']].map(([k,t],i)=>`<button class="${i===0?'on':''}" data-act="fnmodo" data-m="${k}" style="padding:9px 4px;font-size:13px">${t}</button>`).join('')}</div></div>
   <label class="fld" style="display:flex;gap:10px;align-items:center;font-weight:600"><input type="checkbox" id="fnok" style="width:20px;height:20px;accent-color:var(--acc)"> A parcela deste mês já está paga</label>`
   :`<div class="fld"><label>Repetir por quantos meses</label><input class="inp" id="fnp" inputmode="numeric" value="1"></div>`}
   <div class="hint" id="fninfo"></div>
   <div class="actions"><button class="btn" data-act="fnovosave">Lançar</button></div>`;
-  S.fnTipo=FIN_TIPOS[0];
+  S.fnTipo=FIN_TIPOS[0];S.fnModo='parcela';
   document.getElementById('scrim').classList.add('on');sh.classList.add('on');
-  const upd=()=>{const v=parseVal(document.getElementById('fnv').value)||0;const n=Math.max(1,parseInt(document.getElementById('fnp').value)||1);
-    document.getElementById('fninfo').innerHTML=n>1?`${n} ${kind==='rec'?'meses':'parcelas'} de ${brl(v)} = <b>${brl(v*n)}</b>, de ${mesLabel(S.fmes)} até ${mesLabel(addMes(S.fmes,n-1))}.`:'Só neste mês.'};
+  const upd=()=>{const v=parseVal(document.getElementById('fnv').value)||0;const n=Math.max(1,parseInt(document.getElementById('fnp').value)||1);const pl=planoNovoFin(v,n);
+    document.getElementById('fninfo').innerHTML=n>1?`${n} ${kind==='rec'?'meses':'parcelas'} de <b>${brl(pl.vals[n-1])}</b>${pl.vals[0]!==pl.vals[n-1]?` (1ª de ${brl(pl.vals[0])})`:''} = total <b>${brl(pl.total)}</b>, de ${mesLabel(S.fmes)} até ${mesLabel(addMes(S.fmes,n-1))}.`:'Só neste mês.'};S.fnUpd=upd;
   sh.oninput=upd;upd();setTimeout(()=>document.getElementById('fnv').focus(),250);
 }
+function planoNovoFin(v,n){const total=(S.fnovoK==='comp'&&S.fnModo==='total')?Math.round(v*100)/100:Math.round(v*n*100)/100;
+  if(!(S.fnovoK==='comp'&&S.fnModo==='total'))return {total,vals:Array(n).fill(Math.round(v*100)/100)};
+  const base=Math.floor(total/n*100)/100;const vals=Array(n).fill(base);vals[0]=Math.round((total-base*(n-1))*100)/100;return {total,vals}}
 async function salvarNovoFin(){
   const kind=S.fnovoK;const v=parseVal(document.getElementById('fnv').value);const nome=document.getElementById('fnn').value.trim();
   if(!(v>0)){toast('Informe o valor.');return}if(!nome){toast('Informe a descrição.');return}
-  const n=Math.min(240,Math.max(1,parseInt(document.getElementById('fnp').value)||1));const val=Math.round(v*100)/100;
+  const n=Math.min(240,Math.max(1,parseInt(document.getElementById('fnp').value)||1));const pl=planoNovoFin(v,n);
   const c=JSON.parse(JSON.stringify(fcfg()));const lista=kind==='rec'?c.fontes:c.itens;
   let it=lista.find(x=>norm(x.nome)===norm(nome));
   if(!it){it={id:(kind==='rec'?'f':'i')+Date.now(),nome};if(kind==='comp'){it.tipo=S.fnTipo;const dia=parseInt((document.getElementById('fnd')||{}).value);if(dia)it.dia=dia}lista.push(it)}
@@ -1199,8 +1203,8 @@ async function salvarNovoFin(){
   try{
     if(!S.fin.cfg||lista.length!==(kind==='rec'?fcfg().fontes:fcfg().itens).length){if(!c.inicio)c.inicio=S.fmes;await S.db.doc(finCfgW(S.fw)).set(c);S.fin.cfg=c}
     for(let k=0;k<n;k++){const m=addMes(S.fmes,k);const d=JSON.parse(JSON.stringify(S.fin.meses[m]||{}));
-      if(kind==='rec'){const atual=fRec(m,it);d.rec=d.rec||{};const its=(d.recItens||{})[it.id];if(Array.isArray(its)&&its.length){its.push({nome:'Avulso',v:val});d.rec[it.id]=its.reduce((a,x)=>a+(+x.v||0),0)}else d.rec[it.id]=Math.round((atual+val)*100)/100}
-      else{const atual=fComp(m,it);d.comp=d.comp||{};d.comp[it.id]={v:Math.round(((atual.v||0)+val)*100)/100,ok:(k===0?ok:false)&&!(atual.v>0&&!atual.ok)}}
+      if(kind==='rec'){const atual=fRec(m,it);d.rec=d.rec||{};const its=(d.recItens||{})[it.id];if(Array.isArray(its)&&its.length){its.push({nome:'Avulso',v:pl.vals[k]});d.rec[it.id]=its.reduce((a,x)=>a+(+x.v||0),0)}else d.rec[it.id]=Math.round((atual+pl.vals[k])*100)/100}
+      else{const atual=fComp(m,it);d.comp=d.comp||{};d.comp[it.id]={v:Math.round(((atual.v||0)+pl.vals[k])*100)/100,ok:(k===0?ok:false)&&!(atual.v>0&&!atual.ok)}}
       await S.db.doc(finColW(S.fw)+'/'+m).set(d);S.fin.meses[m]=d;if(n>1)toast('Lançando… '+(k+1)+'/'+n)}
     closeSheet();toast(n>1?`Lançado em ${n} meses ✓`:'Lançado ✓');render();
   }catch(e){dbErr(e)}
@@ -1445,6 +1449,7 @@ document.addEventListener('click',async ev=>{
     case 'fdelok':excluirFin(b.dataset.modo);break;
     case 'fnovo':abrirNovoFin(b.dataset.k);break;
     case 'fnovosave':salvarNovoFin();break;
+    case 'fnmodo':S.fnModo=b.dataset.m;document.querySelectorAll('[data-act=fnmodo]').forEach(x=>x.classList.toggle('on',x.dataset.m===S.fnModo));S.fnUpd&&S.fnUpd();break;
     case 'fntipo':S.fnTipo=b.dataset.t;document.querySelectorAll('[data-act=fntipo]').forEach(x=>x.classList.toggle('on',x.dataset.t===S.fnTipo));break;
     case 'fcliadd':{document.getElementById('fclis').insertAdjacentHTML('beforeend',cliRow('',''));const l=document.querySelectorAll('.fcli [data-k=n]');l[l.length-1].focus();break}
     case 'fclidel':{b.closest('.fcli').remove();atualizaCliTot();break}
