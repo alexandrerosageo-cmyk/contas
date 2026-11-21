@@ -1181,7 +1181,7 @@ function abrirNovoFin(kind){
   ${kind==='comp'?`<div class="fld"><label>Tipo</label><div class="chips">${FIN_TIPOS.map((t,i)=>`<button class="chip ${i===0?'on':''}" data-act="fntipo" data-t="${t}">${FIN_EMO[t]||''} ${t}</button>`).join('')}</div></div>
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px"><div class="fld"><label>Vence dia</label><input class="inp" id="fnd" inputmode="numeric" placeholder="opcional"></div><div class="fld"><label>Nº de parcelas</label><input class="inp" id="fnp" inputmode="numeric" value="1"></div></div>
   <div class="fld"><label>O valor acima é</label><div class="seg">${[['parcela','Valor de cada parcela'],['total','Valor total']].map(([k,t],i)=>`<button class="${i===0?'on':''}" data-act="fnmodo" data-m="${k}" style="padding:9px 4px;font-size:13px">${t}</button>`).join('')}</div></div>
-  ${fcfg().itens.some(x=>x.tipo==='Cartão')?`<div class="fld" id="fncardbox"><label>Pago com cartão?</label><select class="inp" id="fncard"><option value="">Não (boleto, débito, pix…)</option>${fcfg().itens.filter(x=>x.tipo==='Cartão').map(x=>`<option value="${esc(x.id)}">💳 ${esc(x.nome)}</option>`).join('')}</select><div class="hint">O valor de cada parcela sai da fatura desse cartão, para não contar duas vezes.</div></div>`:''}
+  ${cartoesPerfil().length?`<div class="fld" id="fncardbox"><label>Pago com cartão?</label><select class="inp" id="fncard"><option value="">Não (boleto, débito, pix…)</option>${cartoesPerfil().map(x=>`<option value="${esc(x.id)}">💳 ${esc(x.nome)}</option>`).join('')}</select><div class="hint">O valor de cada parcela sai da fatura desse cartão, para não contar duas vezes.</div></div>`:''}
   <label class="fld" style="display:flex;gap:10px;align-items:center;font-weight:600"><input type="checkbox" id="fnok" style="width:20px;height:20px;accent-color:var(--acc)"> A parcela deste mês já está paga</label>`
   :`<div class="fld"><label>Repetir por quantos meses</label><input class="inp" id="fnp" inputmode="numeric" value="1"></div>`}
   <div class="hint" id="fninfo"></div>
@@ -1214,12 +1214,15 @@ async function salvarNovoFin(){
     closeSheet();toast(n>1?`Lançado em ${n} meses ✓`:'Lançado ✓');render();
   }catch(e){dbErr(e)}
 }
+function cartoesPerfil(){const outroN=norm(S.fw==='dai'?'alex':'dai');return fcfg().itens.filter(x=>x.tipo==='Cartão'&&!norm(x.nome).split(' ').includes(outroN))}
 function abrirFinVal(kind,id){
   const c=fcfg();const m=S.fmes;const it=(kind==='rec'?c.fontes:c.itens).find(x=>x.id===id);if(!it)return;
-  const v=kind==='rec'?fRec(m,it):fCompRaw(m,it).v;const ok=kind==='comp'&&fCompRaw(m,it).ok;S.fv={kind,id};const cartoes=kind==='comp'&&it.tipo!=='Cartão'?fcfg().itens.filter(x=>x.tipo==='Cartão'):[];const liq=kind==='comp'&&it.tipo==='Cartão'?fComp(m,it):null;
+  const v=kind==='rec'?fRec(m,it):fCompRaw(m,it).v;const ok=kind==='comp'&&fCompRaw(m,it).ok;S.fv={kind,id};const cartoes=kind==='comp'&&it.tipo!=='Cartão'?cartoesPerfil():[];const liq=kind==='comp'&&it.tipo==='Cartão'?fComp(m,it):null;
   const sh=document.getElementById('sheet');
   sh.innerHTML=`<div class="grab"></div><h3>${esc(it.nome)}<button class="btn light sm" data-act="close">Fechar</button></h3><p class="hint">${mesLabel(m)} · ${kind==='rec'?'receita':esc(it.tipo||'compromisso')}</p>
   <div class="amt"><span>R$</span><input id="fvv" inputmode="decimal" value="${v?v.toFixed(2).replace('.',','):''}" placeholder="0,00"></div>
+  <div class="fld"><label>Nome</label><input class="inp" id="fvnome" value="${esc(it.nome)}"></div>
+  ${kind==='comp'?`<div style="display:grid;grid-template-columns:1fr 100px;gap:8px"><div class="fld"><label>Tipo</label><select class="inp" id="fvtipo">${FIN_TIPOS.map(t=>`<option ${t===(it.tipo||'Diversos')?'selected':''}>${t}</option>`).join('')}</select></div><div class="fld"><label>Vence dia</label><input class="inp" id="fvdia" inputmode="numeric" value="${it.dia||''}" placeholder="—"></div></div>`:''}
   ${kind==='rec'?(()=>{const its=recItens(m,it);const nomes=[...new Set(Object.values(S.fin.meses).flatMap(d=>((d.recItens||{})[it.id]||[]).map(x=>x.nome)).filter(Boolean))];
     return `<div class="fld"><label>Detalhar por cliente (opcional)</label><div id="fclis">${its.map(x=>cliRow(x.nome,x.v)).join('')}</div>
     <datalist id="fclinomes">${nomes.map(n=>`<option value="${esc(n)}">`).join('')}</datalist>
@@ -1227,10 +1230,12 @@ function abrirFinVal(kind,id){
   ${liq&&liq.ded?`<div class="capt" style="background:#e7f0fb;color:#2a5aa8">💳 Digite a <b>fatura total</b> do cartão. Desse valor saem os compromissos pagos com ele: ${liq.vinc.map(x=>esc(x.nome)+' '+brl(x.v)).join(', ')} → fica <b>${brl(liq.v)}</b>.</div>`:''}
   ${cartoes.length?`<div class="fld"><label>Pago com cartão?</label><select class="inp" id="fvcard"><option value="">Não (boleto, débito, pix…)</option>${cartoes.map(x=>`<option value="${esc(x.id)}" ${it.cartao===x.id?'selected':''}>💳 ${esc(x.nome)}</option>`).join('')}</select><div class="hint">Se sim, o valor sai da fatura desse cartão para não contar duas vezes (vale para todos os meses deste compromisso).</div></div>`:''}
   ${kind==='comp'?`<label class="fld" style="display:flex;gap:10px;align-items:center;font-weight:600"><input type="checkbox" id="fvok" ${ok?'checked':''} style="width:20px;height:20px;accent-color:var(--acc)"> Já está pago</label>`:''}
-  <div class="fld"><label>Repetir este valor nos próximos meses</label><input class="inp" id="fvrep" inputmode="numeric" placeholder="0 = só este mês"></div>
+  <div class="fld"><label>Aplicar este valor</label><select class="inp" id="fvapl"><option value="mes">Só em ${mesLabel(m)}</option>${(()=>{const fut=Object.keys(S.fin.meses).filter(x=>x>m&&(kind==='rec'?((S.fin.meses[x].rec||{})[it.id]||0)>0:(((S.fin.meses[x].comp||{})[it.id]||{}).v||0)>0)).length;return fut?`<option value="prox">Neste e nos próximos ${fut} ${fut>1?'meses que já têm valor':'mês que já tem valor'} (parcelas)</option>`:''})()}<option value="rep">Repetir por mais meses…</option></select>
+  <input class="inp" id="fvrep" inputmode="numeric" placeholder="quantos meses a mais?" style="margin-top:6px;display:none"></div>
   <div class="actions" id="fvacts"><button class="btn bad" data-act="fdel">Excluir</button><button class="btn" data-act="fvalsave">Salvar</button></div>`;
   document.getElementById('scrim').classList.add('on');sh.classList.add('on');
   const fc=document.getElementById('fclis');if(fc){fc.oninput=atualizaCliTot;atualizaCliTot()}
+  const ap=document.getElementById('fvapl');if(ap)ap.onchange=()=>{document.getElementById('fvrep').style.display=ap.value==='rep'?'':'none'};
 }
 function abrirFinDel(){
   const {kind,id}=S.fv;const it=(kind==='rec'?fcfg().fontes:fcfg().itens).find(x=>x.id===id);if(!it)return;
@@ -1260,12 +1265,19 @@ async function excluirFin(modo){
 }
 async function salvarFinVal(){
   const {kind,id}=S.fv;const clis=kind==='rec'?lerClis():[];const v=clis.length?clis.reduce((a,x)=>a+x.v,0):parseVal(document.getElementById('fvv').value);const val=isNaN(v)?0:Math.round(v*100)/100;
-  const ok=kind==='comp'&&document.getElementById('fvok').checked;const rep=Math.min(120,Math.max(0,parseInt(document.getElementById('fvrep').value)||0));
-  try{for(let k=0;k<=rep;k++){const m=addMes(S.fmes,k);const d=JSON.parse(JSON.stringify(S.fin.meses[m]||{}));
+  const ok=kind==='comp'&&document.getElementById('fvok').checked;const apl=(document.getElementById('fvapl')||{}).value||'mes';
+  let alvo=[S.fmes];if(apl==='rep'){const n=Math.min(120,Math.max(0,parseInt(document.getElementById('fvrep').value)||0));for(let k=1;k<=n;k++)alvo.push(addMes(S.fmes,k))}
+  else if(apl==='prox'){alvo=alvo.concat(Object.keys(S.fin.meses).filter(x=>x>S.fmes&&(kind==='rec'?((S.fin.meses[x].rec||{})[id]||0)>0:(((S.fin.meses[x].comp||{})[id]||{}).v||0)>0)).sort())}
+  try{for(let k=0;k<alvo.length;k++){const m=alvo[k];const d=JSON.parse(JSON.stringify(S.fin.meses[m]||{}));
     if(kind==='rec'){d.rec=d.rec||{};d.rec[id]=val;d.recItens=d.recItens||{};if(clis.length)d.recItens[id]=clis.map(x=>({...x}));else delete d.recItens[id]}else{d.comp=d.comp||{};d.comp[id]={v:val,ok:k===0?ok:false}}
     await S.db.doc(finColW(S.fw)+'/'+m).set(d);S.fin.meses[m]=d}
-    const sel=document.getElementById('fvcard');if(sel&&kind==='comp'){const c=JSON.parse(JSON.stringify(fcfg()));const it=c.itens.find(x=>x.id===id);if(it&&(it.cartao||'')!==sel.value){if(sel.value)it.cartao=sel.value;else delete it.cartao;await S.db.doc(finCfgW(S.fw)).set(c);S.fin.cfg=c}}
-    closeSheet();toast('Salvo ✓');render()}catch(e){dbErr(e)}
+    {const c=JSON.parse(JSON.stringify(fcfg()));const it=(kind==='rec'?c.fontes:c.itens).find(x=>x.id===id);let mud=false;
+     if(it){const nome=(document.getElementById('fvnome')||{}).value;if(nome&&nome.trim()&&nome.trim()!==it.nome){it.nome=nome.trim();mud=true}
+      if(kind==='comp'){const tp=(document.getElementById('fvtipo')||{}).value;if(tp&&tp!==it.tipo){it.tipo=tp;mud=true;if(tp==='Cartão')delete it.cartao}
+       const dia=parseInt((document.getElementById('fvdia')||{}).value);if((dia||undefined)!==(it.dia||undefined)){if(dia>=1&&dia<=31)it.dia=dia;else delete it.dia;mud=true}
+       const sel=document.getElementById('fvcard');if(sel&&it.tipo!=='Cartão'&&(it.cartao||'')!==sel.value){if(sel.value)it.cartao=sel.value;else delete it.cartao;mud=true}}}
+     if(mud){await S.db.doc(finCfgW(S.fw)).set(c);S.fin.cfg=c}}
+    closeSheet();toast(alvo.length>1?`Salvo ✓ em ${alvo.length} meses`:'Salvo ✓');render()}catch(e){dbErr(e)}
 }
 async function toggleFinOk(id){const m=S.fmes;const it=fcfg().itens.find(x=>x.id===id);if(!it)return;const x=fCompRaw(m,it);if(!x.v)return;
   const d=JSON.parse(JSON.stringify(S.fin.meses[m]||{}));d.comp=d.comp||{};d.comp[id]={v:x.v,ok:!x.ok};S.fin.meses[m]=d;render();
