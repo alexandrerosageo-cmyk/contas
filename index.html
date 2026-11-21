@@ -1156,6 +1156,7 @@ function viewFinW(){
       <button data-act="fok" data-id="${esc(x.i.id)}" aria-label="Marcar como pago" style="width:34px;height:34px;border-radius:50%;border:2px solid ${x.ok?'#1f6b45':'#d6d3cb'};background:${x.ok?'#1f6b45':'#fff'};color:#fff;font-weight:800;flex:0 0 auto" ${x.v?'':'disabled'}>${x.ok?'✓':''}</button>
       <button data-act="fval" data-k="comp" data-id="${esc(x.i.id)}" style="all:unset;flex:1;display:flex;align-items:center;gap:10px;cursor:pointer;min-width:0"><div class="x"><b style="${x.ok?'text-decoration:line-through;color:var(--mute)':''}">${esc(x.i.nome)}</b><small>${x.i.dia?'vence dia '+x.i.dia+' · ':''}${x.ok?'pago':x.prev&&x.v?'previsto':x.v?'a pagar':'—'}${x.i.cartao?' · 💳 '+esc((c.itens.find(k=>k.id===x.i.cartao)||{}).nome||'cartão'):''}${x.ded?`<br>fatura ${brl(x.bruto)} − ${x.vinc.map(y=>esc(y.nome)).join(', ')} ${brl(x.ded)}`:''}</small></div><div class="v">${brl(x.v)}</div></button></div>`).join('')+`</div>`;
   }
+  if(cartoesPerfil().length)h+=`<button class="btn light sm" data-act="fat" style="margin-top:10px;margin-right:6px">💳 Faturas dos cartões</button>`;
   h+=`<button class="btn sm" data-act="fnovo" data-k="comp" style="margin-top:10px;margin-right:6px">+ Compromisso (à vista ou parcelado)</button>`;
   if(ocultos)h+=`<button class="btn light sm" data-act="fall" style="margin-top:8px">${S.fall?'Esconder itens sem valor':'Mostrar todos ('+ocultos+' sem valor neste mês)'}</button>`;
   // empréstimos e dívidas
@@ -1215,6 +1216,29 @@ async function salvarNovoFin(){
   }catch(e){dbErr(e)}
 }
 function cartoesPerfil(){const outroN=norm(S.fw==='dai'?'alex':'dai');return fcfg().itens.filter(x=>x.tipo==='Cartão'&&!norm(x.nome).split(' ').includes(outroN))}
+function abrirFaturas(cardId){
+  const cards=cartoesPerfil();if(!cards.length)return;const card=cards.find(x=>x.id===cardId)||cards.find(x=>x.id===S.fatCard)||cards[0];S.fatCard=card.id;
+  const n=S.fatN||12;const meses=[];for(let k=0;k<n;k++)meses.push(addMes(S.fmes,k));
+  const sh=document.getElementById('sheet');
+  sh.innerHTML=`<div class="grab"></div><h3>💳 Faturas dos cartões<button class="btn light sm" data-act="close">Fechar</button></h3>
+  <p class="hint">${FIN_NOME[S.fw]} · digite a <b>fatura total</b> de cada mês, como vem do banco. Deixe em branco o que não souber.</p>
+  <div class="chips scroll" style="margin-bottom:10px">${cards.map(x=>`<button class="chip ${x.id===card.id?'on':''}" data-act="fatcard" data-id="${esc(x.id)}">${esc(x.nome.replace(/^Cartão\s*/i,''))}</button>`).join('')}</div>
+  <div id="fatrows">${meses.map(m=>{const r=fCompRaw(m,card);const liq=fComp(m,card);const d=S.fin.meses[m];const tem=d&&d.comp&&d.comp[card.id]&&d.comp[card.id].v!=null;
+    return `<div class="fatr" data-m="${m}" style="display:grid;grid-template-columns:1fr 130px;gap:8px;align-items:center;padding:6px 0;border-top:1px solid #f2f0ea"><div><b style="text-transform:capitalize;font-size:14px">${mesLabel(m)}</b><br><small style="color:var(--mute)">${r.ok?'✓ paga':tem?'lançada':r.v?'prevista (padrão)':'—'}${liq.ded?` · sai ${brl(liq.ded)} de compromissos`:''}</small></div>
+    <input class="inp" inputmode="decimal" data-orig="${tem?r.v:''}" value="${tem&&r.v?String(r.v).replace('.',','):''}" placeholder="${!tem&&r.v?String(r.v).replace('.',','):'0,00'}" style="padding:9px 10px;text-align:right"></div>`}).join('')}</div>
+  <button class="btn light sm" data-act="fatmais" style="margin-top:8px">+ mais 12 meses</button>
+  <div class="actions"><button class="btn" data-act="fatsave">Salvar faturas</button></div>`;
+  document.getElementById('scrim').classList.add('on');sh.classList.add('on');
+}
+async function salvarFaturas(){
+  const id=S.fatCard;const rows=[...document.querySelectorAll('.fatr')];let n=0;
+  try{for(const r of rows){const inp=r.querySelector('input');const txt=inp.value.trim();const orig=inp.dataset.orig;const m=r.dataset.m;
+      if(txt===''&&orig==='')continue;const v=txt===''?0:Math.round((parseVal(txt)||0)*100)/100;if(orig!==''&&+orig===v)continue;
+      const d=JSON.parse(JSON.stringify(S.fin.meses[m]||{}));d.comp=d.comp||{};const ok=!!(d.comp[id]&&d.comp[id].ok);d.comp[id]={v,ok:v?ok:false};
+      await S.db.doc(finColW(S.fw)+'/'+m).set(d);S.fin.meses[m]=d;n++}
+    closeSheet();render();toast(n?`${n} ${n>1?'faturas salvas':'fatura salva'} ✓`:'Nada alterado');
+  }catch(e){dbErr(e)}
+}
 function abrirFinVal(kind,id){
   const c=fcfg();const m=S.fmes;const it=(kind==='rec'?c.fontes:c.itens).find(x=>x.id===id);if(!it)return;
   const v=kind==='rec'?fRec(m,it):fCompRaw(m,it).v;const ok=kind==='comp'&&fCompRaw(m,it).ok;S.fv={kind,id};const cartoes=kind==='comp'&&it.tipo!=='Cartão'?cartoesPerfil():[];const liq=kind==='comp'&&it.tipo==='Cartão'?fComp(m,it):null;
@@ -1466,6 +1490,10 @@ document.addEventListener('click',async ev=>{
     case 'fval':abrirFinVal(b.dataset.k,b.dataset.id);break;
     case 'fvalsave':salvarFinVal();break;
     case 'fdel':abrirFinDel();break;
+    case 'fat':S.fatN=12;abrirFaturas();break;
+    case 'fatcard':{const dirty=[...document.querySelectorAll('.fatr input')].some(i=>i.value.trim()!==(i.dataset.orig?String(i.dataset.orig).replace('.',','):''));if(dirty){await salvarFaturas()}abrirFaturas(b.dataset.id);break}
+    case 'fatmais':{const dirty=[...document.querySelectorAll('.fatr input')].some(i=>i.value.trim()!==(i.dataset.orig?String(i.dataset.orig).replace('.',','):''));if(dirty)await salvarFaturas();S.fatN=(S.fatN||12)+12;abrirFaturas();break}
+    case 'fatsave':salvarFaturas();break;
     case 'fdelok':excluirFin(b.dataset.modo);break;
     case 'fnovo':abrirNovoFin(b.dataset.k);break;
     case 'fnovosave':salvarNovoFin();break;
